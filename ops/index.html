@@ -1,0 +1,648 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>ZCL Ops Work Orders</title>
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#0f1720">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="ZCL Ops">
+<style>
+  :root {
+    --bg: #0f1720; --card: #18232f; --line: #263544; --text: #eef3f7; --muted: #8fa3b5;
+    --brand: #f2a516; --go: #22b36b; --stop: #e5484d; --wait: #3b82f6;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; -webkit-tap-highlight-color: transparent; }
+  header { display: flex; justify-content: space-between; align-items: center;
+    padding: 14px 16px; border-bottom: 1px solid var(--line); }
+  header b { color: var(--brand); letter-spacing: .5px; }
+  header small { color: var(--muted); }
+  main { padding: 16px; max-width: 480px; margin: 0 auto; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px; margin-bottom: 14px; }
+  label { display: block; font-size: 13px; color: var(--muted); margin: 12px 0 6px; }
+  input, select { width: 100%; padding: 14px; font-size: 17px; border-radius: 10px;
+    border: 1px solid var(--line); background: var(--bg); color: var(--text); }
+  input:focus, select:focus { outline: 2px solid var(--brand); border-color: transparent; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { padding: 10px 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--bg);
+    color: var(--text); font-size: 15px; }
+  .chip.on { background: var(--brand); color: #111; border-color: var(--brand); font-weight: 600; }
+  button.big { width: 100%; padding: 20px; font-size: 20px; font-weight: 700; border: 0; border-radius: 14px;
+    color: #fff; margin-top: 16px; }
+  .go { background: var(--go); } .stop { background: var(--stop); } .ghost { background: transparent; border: 1px solid var(--line) !important; color: var(--muted) !important; font-size: 15px !important; padding: 12px !important; }
+  .timer { font-size: 64px; font-weight: 800; text-align: center; font-variant-numeric: tabular-nums; margin: 8px 0; }
+  .center { text-align: center; } .muted { color: var(--muted); }
+  .err { color: var(--stop); font-size: 14px; min-height: 18px; margin-top: 8px; }
+  .job { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 15px; }
+  .job:last-child { border-bottom: 0; }
+  .pill { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--line); color: var(--muted); }
+  .pill.sync { background: #3b2d0c; color: var(--brand); }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<header>
+  <div><b>ZCL OPS</b> <small>Work Orders</small></div>
+  <small id="who"></small>
+</header>
+<main>
+
+  <!-- LOGIN -->
+  <section id="login" class="card hidden">
+    <h2 style="margin:0 0 4px">Operator sign in</h2>
+    <p class="muted" style="margin:0">Pick your name and enter your PIN.</p>
+    <label>Name</label>
+    <select id="opName"></select>
+    <label>PIN</label>
+    <input id="opPin" type="password" inputmode="numeric" maxlength="6" placeholder="••••">
+    <div class="err" id="loginErr"></div>
+    <button class="big go" onclick="login()">Sign in</button>
+  </section>
+
+  <!-- NEW JOB -->
+  <section id="newJob" class="hidden">
+    <div class="card" style="display:flex;justify-content:space-between;align-items:center">
+      <div><small class="muted">Logged in</small><br><b id="loginAt">—</b></div>
+      <div style="text-align:right"><small class="muted">On duty</small><br><b id="onDuty">—</b></div>
+    </div>
+    <div class="card">
+      <label style="margin-top:0">Task</label>
+      <div class="chips" id="taskChips"></div>
+      <label>Equipment</label>
+      <select id="equipment"></select>
+      <label>Truck / wagon ref (optional)</label>
+      <input id="truck" placeholder="e.g. T123 ABC">
+      <div class="err" id="jobErr"></div>
+      <button class="big go" onclick="beginWork()">▶ Begin Work</button>
+    </div>
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <b>Today's jobs</b><span class="muted" id="todayStats"></span>
+      </div>
+      <div id="todayList"></div>
+    </div>
+    <button class="big ghost" onclick="logout()">Sign out</button>
+  </section>
+
+  <!-- RUNNING -->
+  <section id="running" class="hidden">
+  <div class="card">
+    <div class="center muted" id="runInfo"></div>
+    <div class="center muted" style="margin-top:8px">Work order time</div>
+    <div class="timer" id="timer" style="font-size:40px">00:00</div>
+    <div class="center muted" id="runStart"></div>
+  </div>
+
+  <!-- CONTAINER: ready to start the next one -->
+  <div class="card" id="ctrReady">
+    <b>Next container</b>
+    <label>Container number</label>
+    <input id="container" placeholder="e.g. MSCU1234567" autocapitalize="characters">
+    <label>Size</label>
+    <div class="chips" id="sizeChips"></div>
+    <div class="err" id="ctrErr"></div>
+    <button class="big go" onclick="startContainer()">▶ Start container</button>
+  </div>
+
+  <!-- CONTAINER: one in progress -->
+  <div class="card hidden" id="ctrActive">
+    <div class="center muted" id="ctrInfo"></div>
+    <div class="timer" id="ctrTimer">00:00</div>
+    <button class="big stop" style="background:var(--wait)" onclick="doneContainer()">✓ Container done</button>
+  </div>
+
+  <div class="card">
+    <div style="display:flex;justify-content:space-between"><b>Containers</b><span class="muted" id="ctrStats"></span></div>
+    <div id="ctrList"></div>
+  </div>
+
+  <div class="card">
+    <label style="margin-top:0">Any delay during this work order?</label>
+    <select id="delay">
+      <option value="">No delay</option>
+      <option>Equipment breakdown</option>
+      <option>Waiting for truck</option>
+      <option>Documentation</option>
+      <option>Weather</option>
+      <option>Other</option>
+    </select>
+    <button class="big stop" id="finishBtn" onclick="finishWork()">■ Finish work order</button>
+  </div>
+  </section>
+
+  <!-- SUPERVISOR -->
+  <section id="super" class="hidden">
+    <div class="card">
+      <label style="margin-top:0">Period</label>
+      <div class="chips" id="periodChips"></div>
+      <label>Pick any date in the period</label>
+      <input id="supDate" type="date" onchange="renderSuper()">
+      <div class="muted" id="rangeLabel" style="margin-top:8px;font-size:14px"></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px">
+        <small class="muted" id="syncNote"></small>
+        <button class="chip" onclick="refreshSuper()">↻ Refresh</button>
+      </div>
+      <div id="teamStats" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px"></div>
+    </div>
+    <div class="card">
+      <b>Averages by task & size</b>
+      <div id="avgTable"></div>
+    </div>
+    <div class="card hidden" id="trendCard">
+      <b>Daily trend</b> <small class="muted">· avg minutes per container</small>
+      <div id="trendList"></div>
+    </div>
+    <div id="liveList"></div>
+    <div class="card">
+      <b>Operators</b> <small class="muted">· fastest avg per container first</small>
+      <div id="opList"></div>
+    </div>
+    <div class="card">
+      <b>Team accounts</b> <small class="muted">· add or change logins</small>
+      <label>Full name</label>
+      <input id="uName" placeholder="e.g. John Mwakalinga">
+      <label>PIN (4–6 digits)</label>
+      <input id="uPin" inputmode="numeric" maxlength="6" placeholder="e.g. 4821">
+      <label>Role</label>
+      <div class="chips" id="roleChips"></div>
+      <div class="err" id="uErr"></div>
+      <button class="big go" id="uSave" onclick="saveUser()">+ Save account</button>
+      <div id="userList" style="margin-top:10px"></div>
+    </div>
+    <button class="big ghost" onclick="logout()">Sign out</button>
+  </section>
+
+</main>
+<div id="toast" class="hidden" style="position:fixed;left:16px;right:16px;bottom:20px;max-width:448px;margin:0 auto;
+  background:#2a3a4a;color:var(--text);padding:14px 16px;border-radius:12px;text-align:center;font-size:15px;
+  box-shadow:0 6px 20px rgba(0,0,0,.4)"></div>
+<script>
+// ---- Connection to the Google Sheet backend (Apps Script web app) ----
+const API = "https://script.google.com/macros/s/AKfycbzJC8fX2mcOLFFerQx91rQtYTmrOpjK8UQ1bahy9DM33Egh1dVyQqUryFq9RN6BNEsjdg/exec";
+
+// Every call carries name + PIN; the Sheet checks them. No Content-Type header on purpose:
+// that keeps it a "simple" request, which Google's servers accept from a web page.
+async function api(action, extra = {}, who = store.get("session")) {
+  const res = await fetch(API, { method: "POST", body: JSON.stringify({ action, name: who?.name, pin: who?.pin, ...extra }) });
+  return res.json();
+}
+
+const TASKS = ["Load container", "Offload container", "Stuffing", "Destuffing", "Truck loading", "Other"];
+const SIZES = ["20ft", "40ft"];
+const EQUIPMENT = ["Forklift", "Reach stacker", "Crane", "Manual", "Other"];
+
+// ---- Phone storage (survives refresh, phone lock, lost signal) ----
+const store = {
+  get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
+};
+const $ = id => document.getElementById(id);
+let task = TASKS[0], size = SIZES[0], tick = null;
+
+function chips(el, list, current, onPick) {
+  el.innerHTML = "";
+  list.forEach(v => {
+    const b = document.createElement("button");
+    b.className = "chip" + (v === current ? " on" : "");
+    b.textContent = v;
+    b.onclick = () => { onPick(v); chips(el, list, v, onPick); };
+    el.appendChild(b);
+  });
+}
+function show(id) {
+  ["login", "newJob", "running", "super"].forEach(s => $(s).classList.toggle("hidden", s !== id));
+}
+function fmt(ms) {
+  const s = Math.floor(ms / 1000), h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), ss = s % 60;
+  const p = n => String(n).padStart(2, "0");
+  return h ? `${h}:${p(m)}:${p(ss)}` : `${p(m)}:${p(ss)}`;
+}
+function clock(t) { return new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); }
+
+// ---- Accounts (live in the Sheet's Users tab) ----
+async function fillLoginNames() {
+  const paint = names => $("opName").innerHTML = names.map(n => `<option>${n}</option>`).join("");
+  paint(store.get("names", []));                       // last known list first, so it works offline
+  try {
+    const r = await (await fetch(API + "?action=names")).json();
+    if (r.ok) { store.set("names", r.names); paint(r.names); }
+  } catch { if (!store.get("names", []).length) $("loginErr").textContent = "No connection — can't load names yet."; }
+}
+
+let newRole = "operator", serverUsers = [];
+async function saveUser() {
+  const name = $("uName").value.trim().replace(/\s+/g, " "), pin = $("uPin").value.trim();
+  if (name.length < 3) return $("uErr").textContent = "Enter the full name.";
+  if (!/^\d{4,6}$/.test(pin)) return $("uErr").textContent = "PIN must be 4–6 digits.";
+  const existing = serverUsers.find(u => u.name.toLowerCase() === name.toLowerCase());
+  if (existing && !armOrConfirm($("uSave"), `Tap again to update ${existing.name}`)) return;
+  $("uErr").textContent = "Saving…";
+  try {
+    const r = await api("saveUser", { user: { name, pin, role: newRole } });
+    if (!r.ok) return $("uErr").textContent = r.error;
+    $("uErr").textContent = ""; $("uSave").textContent = "+ Save account"; $("uName").value = ""; $("uPin").value = "";
+    toast(r.updated ? `${name} updated.` : `${name} can now sign in.`);
+    renderUsers();
+  } catch { $("uErr").textContent = "No connection — try again."; }
+}
+function editUser(i) {
+  const u = serverUsers[i];
+  $("uName").value = u.name; $("uPin").value = ""; newRole = u.role;
+  chips($("roleChips"), ["operator", "supervisor"], newRole, v => newRole = v);
+  $("uPin").focus(); toast(`Enter a new PIN for ${u.name}, then Save.`);
+}
+async function toggleUser(i) {
+  const u = serverUsers[i];
+  try {
+    const r = await api("toggleUser", { target: u.name });
+    if (!r.ok) return toast(r.error);
+    toast(`${u.name} ${u.active ? "can no longer sign in" : "can sign in again"}.`);
+    renderUsers();
+  } catch { toast("No connection — try again."); }
+}
+async function renderUsers() {
+  chips($("roleChips"), ["operator", "supervisor"], newRole, v => newRole = v);
+  try {
+    const r = await api("listUsers");
+    if (!r.ok) return $("userList").innerHTML = `<p class="muted">${r.error}</p>`;
+    serverUsers = r.users;
+  } catch { return $("userList").innerHTML = `<p class="muted">No connection — accounts can't load.</p>`; }
+  $("userList").innerHTML = serverUsers.map((u, i) => `
+    <div class="job" style="align-items:center">
+      <div style="${u.active ? "" : "opacity:.45"}">${u.name}<br>
+        <small class="muted">${u.role}${u.active ? "" : " · deactivated"}</small></div>
+      <div style="display:flex;gap:6px">
+        <button class="chip" onclick="editUser(${i})">PIN</button>
+        <button class="chip" onclick="toggleUser(${i})">${u.active ? "Deactivate" : "Activate"}</button>
+      </div>
+    </div>`).join("");
+}
+
+// ---- Login ----
+// Online: the Sheet checks the PIN. Offline: falls back to a scrambled copy saved at this
+// operator's last successful online sign-in on this phone, so weak signal never blocks work.
+async function sha(text) {
+  try {
+    const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode("zcl-ops:" + text));
+    return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, "0")).join("");
+  } catch { return null; }   // very old browser: online sign-in still works, offline fallback doesn't
+}
+async function login() {
+  const name = $("opName").value, pin = $("opPin").value;
+  if (!name || !pin) return $("loginErr").textContent = "Pick your name and enter your PIN.";
+  $("loginErr").textContent = "Checking…";
+  const known = store.get("known", {});
+  let role;
+  try {
+    const r = await api("login", {}, { name, pin });
+    if (!r.ok) return $("loginErr").textContent = "Wrong PIN. Try again.";
+    role = r.role;
+    known[name] = { hash: await sha(pin), role }; store.set("known", known);
+  } catch {
+    const h = await sha(pin);
+    if (!h || !known[name] || known[name].hash !== h)
+      return $("loginErr").textContent = "No connection, and this phone can't verify you offline yet.";
+    role = known[name].role;
+    toast("Signed in offline — your work will upload when signal returns.");
+  }
+  store.set("session", { name, pin, role, loginAt: Date.now() });
+  const creds = store.get("creds", {}); creds[name] = pin; store.set("creds", creds);
+  $("opPin").value = ""; $("loginErr").textContent = "";
+  route(); sync();
+}
+function logout() {
+  if (store.get("active")) return toast("Finish the running work order first.");
+  const s = store.get("session");
+  if (s.role !== "supervisor") {
+    const shifts = store.get("shifts", []);
+    shifts.push({ id: "SH-" + Date.now().toString(36).toUpperCase(), operator: s.name,
+      loginAt: s.loginAt, logoutAt: Date.now(), synced: false });
+    store.set("shifts", shifts);
+  }
+  localStorage.removeItem("session"); route(); sync();
+}
+
+// ---- Upload to the Sheet ----
+// Each finished work order / shift is sent with its owner's PIN. Anything that fails stays
+// "on phone" and is retried every minute and whenever signal comes back.
+let syncing = false;
+async function sync() {
+  if (syncing || !navigator.onLine) return;
+  syncing = true;
+  try {
+    const jobs = store.get("jobs", []), shifts = store.get("shifts", []), creds = store.get("creds", {});
+    shifts.forEach((s, i) => { if (!s.id) s.id = "SH-" + s.loginAt.toString(36).toUpperCase() + i; });
+    const owners = [...new Set([...jobs, ...shifts].filter(x => !x.synced).map(x => x.operator))];
+    let changed = false;
+    for (const op of owners) {
+      if (!creds[op]) continue;
+      try {
+        const r = await api("submit", {
+          jobs: jobs.filter(j => !j.synced && j.operator === op),
+          shifts: shifts.filter(s => !s.synced && s.operator === op)
+        }, { name: op, pin: creds[op] });
+        if (!r.ok) continue;
+        jobs.forEach(j => { if (r.saved.jobs.includes(j.id)) j.synced = true; });
+        shifts.forEach(s => { if (r.saved.shifts.includes(s.id)) s.synced = true; });
+        changed = true;
+      } catch {}
+    }
+    store.set("jobs", jobs); store.set("shifts", shifts);
+    // Forget an operator's PIN on this phone once nothing of theirs is waiting and they've signed out
+    const me = store.get("session")?.name;
+    Object.keys(creds).forEach(op => {
+      if (op !== me && ![...jobs, ...shifts].some(x => !x.synced && x.operator === op)) delete creds[op];
+    });
+    store.set("creds", creds);
+    if (changed && !$("newJob").classList.contains("hidden")) route();
+  } finally { syncing = false; }
+}
+// Tell the Sheet what this operator is doing right now (for the supervisor's "Working now")
+function pushLive() {
+  const s = store.get("session");
+  if (s && s.role !== "supervisor") api("live", { active: store.get("active") }).catch(() => {});
+}
+
+// ---- Jobs ----
+function beginWork() {
+  $("jobErr").textContent = "";
+  const s = store.get("session");
+  // Idle gap = time since the operator's last finished job this session, or since login
+  const lastEnd = store.get("jobs", [])
+    .filter(j => j.operator === s.name && j.end >= s.loginAt)
+    .reduce((m, j) => Math.max(m, j.end), s.loginAt);
+  store.set("active", {
+    id: "WO-" + Date.now().toString(36).toUpperCase(),
+    operator: s.name, loginAt: s.loginAt,
+    idleBefore: +((Date.now() - lastEnd) / 60000).toFixed(1),
+    task,
+    equipment: $("equipment").value, truck: $("truck").value.trim(),
+    start: Date.now(),
+    containers: [],   // finished containers, each with its own start/end
+    current: null     // the container being worked on right now
+  });
+  $("truck").value = "";
+  route(); pushLive();
+}
+
+// ---- Containers inside a work order ----
+function startContainer() {
+  const a = store.get("active");
+  const no = $("container").value.trim().toUpperCase();
+  if (!no) { $("ctrErr").textContent = "Enter the container number."; return; }
+  if (a.containers.some(c => c.no === no)) { $("ctrErr").textContent = "This container is already done in this work order."; return; }
+  $("ctrErr").textContent = "";
+  // Gap since the previous container finished (or since the work order began)
+  const prevEnd = a.containers.length ? a.containers[a.containers.length - 1].end : a.start;
+  a.current = { no, size, start: Date.now(), gapBefore: +((Date.now() - prevEnd) / 60000).toFixed(1) };
+  store.set("active", a);
+  $("container").value = "";
+  route(); pushLive();
+}
+function doneContainer() {
+  const a = store.get("active");
+  if (!a.current) return;
+  const end = Date.now();
+  a.containers.push({ ...a.current, end, minutes: +((end - a.current.start) / 60000).toFixed(1) });
+  a.current = null;
+  store.set("active", a);
+  route(); pushLive();
+}
+
+// In-app messages instead of pop-ups (pop-ups get blocked in some browsers)
+let toastT = null;
+function toast(msg) {
+  $("toast").textContent = msg; $("toast").classList.remove("hidden");
+  clearTimeout(toastT); toastT = setTimeout(() => $("toast").classList.add("hidden"), 3500);
+}
+// Two-tap confirm: first tap arms the button, second tap within 4s confirms
+let armed = null;
+function armOrConfirm(btn, label) {
+  if (armed === btn.id) { armed = null; return true; }
+  armed = btn.id;
+  const original = btn.dataset.label || (btn.dataset.label = btn.textContent);
+  btn.textContent = label;
+  setTimeout(() => { if (armed === btn.id) armed = null; btn.textContent = original; }, 4000);
+  return false;
+}
+
+function finishWork() {
+  const a = store.get("active");
+  if (!a) return;
+  if (a.current) return toast("Mark the current container as done first.");
+  const btn = $("finishBtn");
+  const n = a.containers.length;
+  if (!armOrConfirm(btn, n ? `Tap again to finish (${n} container${n > 1 ? "s" : ""})` : "No containers — tap again to finish")) return;
+  btn.textContent = btn.dataset.label;
+  const end = Date.now();
+  const job = { ...a, end, minutes: +((end - a.start) / 60000).toFixed(1), delay: $("delay").value, synced: false };
+  const jobs = store.get("jobs", []); jobs.push(job); store.set("jobs", jobs);
+  localStorage.removeItem("active"); $("delay").value = "";
+  route(); pushLive(); sync();
+}
+
+// ---- Screens ----
+function renderNewJob() {
+  const s = store.get("session");
+  $("loginAt").textContent = clock(s.loginAt);
+  const duty = () => { $("onDuty").textContent = fmt(Date.now() - s.loginAt); };
+  duty(); tick = setInterval(duty, 1000);
+  const today = new Date().toDateString();
+  const mine = store.get("jobs", []).filter(j => j.operator === s.name && new Date(j.start).toDateString() === today);
+  const total = mine.reduce((t, j) => t + j.minutes, 0);
+  $("todayStats").textContent = mine.length ? `${mine.length} jobs · avg ${(total / mine.length).toFixed(0)} min` : "";
+  $("todayList").innerHTML = mine.length ? mine.slice().reverse().map(j => {
+    const n = (j.containers || []).length;
+    const avg = n ? j.containers.reduce((t, c) => t + c.minutes, 0) / n : 0;
+    const detail = n ? `${n} container${n > 1 ? "s" : ""} · avg ${avg.toFixed(1)} min` : (j.truck || "—");
+    return `
+    <div class="job"><div>${j.task}<br><small class="muted">${detail} · ${clock(j.start)}</small></div>
+    <div style="text-align:right"><b>${fmt(j.end - j.start)}</b><br>
+    <span class="pill ${j.synced ? "" : "sync"}">${j.synced ? "saved" : "on phone"}</span></div></div>`;
+  }).join("")
+    : `<p class="muted">No jobs yet today.</p>`;
+}
+function renderRunning(a) {
+  $("runInfo").textContent = `${a.task} · ${a.equipment}${a.truck ? " · " + a.truck : ""}`;
+  $("runStart").textContent = "Started " + clock(a.start);
+
+  // Show either "start next container" or the running container
+  $("ctrReady").classList.toggle("hidden", !!a.current);
+  $("ctrActive").classList.toggle("hidden", !a.current);
+  if (a.current) $("ctrInfo").textContent = `${a.current.no} · ${a.current.size} · started ${clock(a.current.start)}`;
+
+  // Finished containers in this work order
+  const n = a.containers.length;
+  const avg = n ? a.containers.reduce((t, c) => t + c.minutes, 0) / n : 0;
+  $("ctrStats").textContent = n ? `${n} done · avg ${avg.toFixed(1)} min` : "";
+  $("ctrList").innerHTML = n ? a.containers.slice().reverse().map(c => `
+    <div class="job"><div>${c.no}<br><small class="muted">${c.size} · ${clock(c.start)}–${clock(c.end)}</small></div>
+    <div style="text-align:right"><b>${fmt(c.end - c.start)}</b></div></div>`).join("")
+    : `<p class="muted">No containers finished yet.</p>`;
+
+  const upd = () => {
+    $("timer").textContent = fmt(Date.now() - a.start);
+    if (a.current) $("ctrTimer").textContent = fmt(Date.now() - a.current.start);
+  };
+  upd(); clearInterval(tick); tick = setInterval(upd, 1000);
+}
+// ---- Supervisor view ----
+const avgOf = (list, f) => list.length ? list.reduce((t, x) => t + f(x), 0) / list.length : 0;
+const stat = (label, value) => `<div style="background:var(--bg);border-radius:10px;padding:12px">
+  <small class="muted">${label}</small><br><b style="font-size:20px">${value}</b></div>`;
+
+// Period = day, week (Mon–Sun) or calendar month around the picked date
+let period = "Day";
+function periodRange(dateStr) {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  let from = new Date(y, m - 1, d), to;
+  if (period === "Week") { from.setDate(d - ((from.getDay() + 6) % 7)); to = new Date(from); to.setDate(from.getDate() + 7); }
+  else if (period === "Month") { from = new Date(y, m - 1, 1); to = new Date(y, m, 1); }
+  else { to = new Date(from); to.setDate(from.getDate() + 1); }
+  return [from.getTime(), to.getTime()];
+}
+const dayKey = t => new Date(t).toLocaleDateString("en-CA");
+const nice = t => new Date(t).toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" });
+
+let report = null, reportKey = "";
+function refreshSuper() { reportKey = ""; renderSuper(); }
+function renderSuper() {
+  chips($("periodChips"), ["Day", "Week", "Month"], period, v => { period = v; renderSuper(); });
+  if (!$("supDate").value) $("supDate").value = dayKey(Date.now()); // YYYY-MM-DD
+  const [from, to] = periodRange($("supDate").value);
+  $("rangeLabel").textContent = period === "Day" ? nice(from)
+    : period === "Week" ? `${nice(from)} – ${nice(to - 1)}`
+    : new Date(from).toLocaleDateString([], { month: "long", year: "numeric" });
+  const onDay = t => t >= from && t < to;   // "in the selected period"
+
+  // Fetch this period from the Sheet (all operators, all phones); redraw when it arrives
+  const key = from + "-" + to;
+  if (reportKey !== key) {
+    reportKey = key; report = null;
+    $("syncNote").textContent = "Loading from the Sheet…";
+    api("report", { from, to })
+      .then(r => { if (reportKey === key) { report = r.ok ? r : { error: r.error }; renderSuper(); } })
+      .catch(() => { if (reportKey === key) { report = { error: "offline" }; renderSuper(); } });
+  }
+  if (!report) return;
+  const fromSheet = !report.error;
+  $("syncNote").textContent = fromSheet
+    ? `From the Sheet · updated ${clock(Date.now())}`
+    : "⚠ Can't reach the Sheet — showing only this phone's records.";
+  const jobs = fromSheet ? report.jobs : store.get("jobs", []).filter(j => onDay(j.start));
+  const shifts = fromSheet ? report.shifts : store.get("shifts", []).filter(s => onDay(s.loginAt));
+  const ctrs = jobs.flatMap(j => (j.containers || []).map(c => ({ ...c, operator: j.operator, task: j.task })));
+  const teamAvg = avgOf(ctrs, c => c.minutes);
+  const woHours = jobs.reduce((t, j) => t + j.minutes, 0) / 60;
+
+  // Team totals
+  $("teamStats").innerHTML =
+    stat("Work orders", jobs.length) +
+    stat("Containers", ctrs.length) +
+    stat("Avg per container", ctrs.length ? teamAvg.toFixed(1) + " min" : "—") +
+    stat("Containers / hour", woHours ? (ctrs.length / woHours).toFixed(1) : "—") +
+    stat("Avg work order", jobs.length ? avgOf(jobs, j => j.minutes).toFixed(0) + " min" : "—") +
+    stat("Delays reported", jobs.filter(j => j.delay).length);
+
+  // Average per task + size (a 40ft load shouldn't be judged against a 20ft one)
+  const groups = {};
+  ctrs.forEach(c => (groups[`${c.task} · ${c.size}`] ||= []).push(c));
+  $("avgTable").innerHTML = Object.keys(groups).length ? Object.entries(groups)
+    .sort((x, y) => y[1].length - x[1].length)
+    .map(([k, list]) => {
+      const mins = list.map(c => c.minutes);
+      return `<div class="job"><div>${k}<br><small class="muted">${list.length} containers · fastest ${Math.min(...mins).toFixed(1)} · slowest ${Math.max(...mins).toFixed(1)}</small></div>
+        <div style="text-align:right"><b>${avgOf(list, c => c.minutes).toFixed(1)} min</b><br><small class="muted">average</small></div></div>`;
+    }).join("") : `<p class="muted">No containers in this period.</p>`;
+
+  // Daily trend for week/month: is the team getting faster or slower?
+  $("trendCard").classList.toggle("hidden", period === "Day");
+  if (period !== "Day") {
+    const byDay = {};
+    ctrs.forEach(c => (byDay[dayKey(c.start)] ||= []).push(c));
+    const days = Object.keys(byDay).sort();
+    const max = Math.max(...days.map(k => avgOf(byDay[k], c => c.minutes)), 1);
+    $("trendList").innerHTML = days.length ? days.map(k => {
+      const v = avgOf(byDay[k], c => c.minutes);
+      return `<div style="margin-top:10px;font-size:14px">
+        <div style="display:flex;justify-content:space-between"><span>${nice(new Date(k + "T12:00"))} <small class="muted">· ${byDay[k].length} ctrs</small></span><b>${v.toFixed(1)} min</b></div>
+        <div style="height:8px;background:var(--bg);border-radius:4px;margin-top:4px">
+          <div style="height:8px;width:${(v / max * 100).toFixed(0)}%;background:${v <= teamAvg ? "var(--go)" : "var(--brand)"};border-radius:4px"></div></div></div>`;
+    }).join("") : `<p class="muted">No containers in this period.</p>`;
+  }
+
+  // Work orders running right now on any operator's phone
+  const live = fromSheet ? (report.live || []) : [store.get("active")].filter(Boolean);
+  $("liveList").innerHTML = live.length ? `<div class="card" style="border-color:var(--go)">
+    <b style="color:var(--go)">● Working now (${live.length})</b>
+    ${live.map(a => `<div class="job"><div><b>${a.operator}</b><br><small class="muted">${a.task} · ${a.containers.length} done
+      ${a.current ? `· on ${a.current.no} since ${clock(a.current.start)}` : "· between containers"}</small></div>
+      <div style="text-align:right"><b>${fmt(Date.now() - a.start)}</b><br><small class="muted">on WO</small></div></div>`).join("")}
+    </div>` : "";
+
+  // One block per operator, fastest average container time first
+  const names = [...new Set(jobs.map(j => j.operator).concat(shifts.map(s => s.operator)))];
+  const rows = names.map(name => {
+    const wo = jobs.filter(j => j.operator === name);
+    const cs = ctrs.filter(c => c.operator === name);
+    const sh = shifts.filter(s => s.operator === name);
+    const firstLogin = Math.min(...wo.map(j => j.loginAt || j.start), ...sh.map(s => s.loginAt));
+    return { name, wo, cs, firstLogin,
+      avg: cs.length ? avgOf(cs, c => c.minutes) : Infinity,
+      gap: avgOf(cs, c => c.gapBefore || 0),
+      idle: wo.reduce((t, j) => t + (j.idleBefore || 0), 0) };
+  }).sort((x, y) => x.avg - y.avg);
+
+  $("opList").innerHTML = rows.length ? rows.map((r, i) => `
+    <details class="job" style="display:block">
+      <summary style="display:flex;justify-content:space-between;cursor:pointer;list-style:none">
+        <div>${i === 0 && r.cs.length ? "🏆 " : ""}<b>${r.name}</b><br>
+          <small class="muted">In ${isFinite(r.firstLogin) ? clock(r.firstLogin) : "—"} · ${r.wo.length} WO · ${r.cs.length} containers</small></div>
+        <div style="text-align:right"><b>${isFinite(r.avg) ? r.avg.toFixed(1) + " min" : "—"}</b><br>
+          ${isFinite(r.avg) && ctrs.length ? (() => {
+            const d = r.avg - teamAvg;
+            return Math.abs(d) < 0.05 ? `<small class="muted">= team avg</small>`
+              : `<small style="color:${d < 0 ? "var(--go)" : "var(--stop)"}">${d < 0 ? "▼" : "▲"} ${Math.abs(d).toFixed(1)} vs team</small>`;
+          })() : `<small class="muted">avg / container</small>`}</div>
+      </summary>
+      <div style="margin-top:10px;font-size:14px" class="muted">
+        Avg gap between containers: <b>${r.gap.toFixed(1)} min</b> · Idle before work orders: <b>${r.idle.toFixed(0)} min</b>
+      </div>
+      ${r.wo.map(j => `<div style="margin-top:10px;padding:10px;background:var(--bg);border-radius:10px;font-size:14px">
+        <b>${j.task}</b> · ${j.equipment} · ${clock(j.start)}–${clock(j.end)} (${fmt(j.end - j.start)})
+        ${j.delay ? `<br><span style="color:var(--stop)">Delay: ${j.delay}</span>` : ""}
+        ${(j.containers || []).map(c => `<div style="display:flex;justify-content:space-between;margin-top:6px">
+          <span>${c.no} <small class="muted">${c.size}</small></span><span>${fmt(c.end - c.start)}</span></div>`).join("")}
+      </div>`).join("")}
+    </details>`).join("")
+    : `<p class="muted">No activity in this period.</p>`;
+}
+
+function route() {
+  clearInterval(tick);
+  const s = store.get("session"), a = store.get("active");
+  $("who").textContent = s ? s.name : "";
+  if (!s) { fillLoginNames(); return show("login"); }
+  if (s.role === "supervisor") { show("super"); renderUsers(); return renderSuper(); }
+  if (a) { show("running"); return renderRunning(a); }
+  show("newJob"); renderNewJob();
+}
+
+// ---- Start ----
+$("equipment").innerHTML = EQUIPMENT.map(e => `<option>${e}</option>`).join("");
+chips($("taskChips"), TASKS, task, v => task = v);
+chips($("sizeChips"), SIZES, size, v => size = v);
+route(); sync();
+// Keep uploading in the background; supervisors' view refreshes itself every minute
+window.addEventListener("online", () => { toast("Back online — uploading…"); sync(); });
+setInterval(() => {
+  sync();
+  if (!$("super").classList.contains("hidden")) refreshSuper();
+}, 60000);
+</script>
+</body>
+</html>
