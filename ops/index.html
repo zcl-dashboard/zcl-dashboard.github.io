@@ -77,6 +77,14 @@
 
   <!-- NEW JOB -->
   <section id="newJob" class="hidden">
+    <div class="card hidden" id="autoOut" style="border-color:var(--brand);text-align:center">
+      <b>✓ Work order saved</b><br>
+      <span class="muted" id="autoOutText">Signing out in 15 s — next operator can sign in.</span>
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <button class="big ghost" style="margin:0" onclick="stayIn()">Stay signed in</button>
+        <button class="big go" style="margin:0;padding:12px;font-size:16px" onclick="logout()">Sign out now</button>
+      </div>
+    </div>
     <div class="card" style="display:flex;justify-content:space-between;align-items:center">
       <div><small class="muted">Logged in</small><br><b id="loginAt">—</b></div>
       <div style="text-align:right"><small class="muted">On duty</small><br><b id="onDuty">—</b></div>
@@ -311,7 +319,8 @@ function clock(t) { return new Date(t).toLocaleTimeString([], { hour: "2-digit",
 
 // ---- Accounts (live in the Sheet's Users tab) ----
 async function fillLoginNames() {
-  const paint = names => $("opName").innerHTML = names.map(n => `<option>${n}</option>`).join("");
+  const paint = names => $("opName").innerHTML = `<option value="">— pick your name —</option>` +
+    names.map(n => `<option>${n}</option>`).join("");
   paint(store.get("names", []));                       // last known list first, so it works offline
   try {
     const r = await (await fetch(API + "?action=names")).json();
@@ -415,8 +424,33 @@ function logout() {
       loginAt: s.loginAt, logoutAt: Date.now(), synced: false });
     store.set("shifts", shifts);
   }
+  clearInterval(autoOutTimer); autoOutTimer = null; $("autoOut").classList.add("hidden");
   localStorage.removeItem("session"); route(); sync();
 }
+
+// ---- Shared tablet: hand the device back to the next operator ----
+const AUTO_OUT_AFTER_FINISH = 15;        // seconds after finishing a work order
+const IDLE_SIGN_OUT_MIN = 5;             // minutes without a tap on the home screen
+let autoOutTimer = null, lastTap = Date.now();
+["pointerdown", "keydown"].forEach(ev => document.addEventListener(ev, () => lastTap = Date.now(), true));
+
+function startAutoOut() {
+  let left = AUTO_OUT_AFTER_FINISH;
+  $("autoOut").classList.remove("hidden");
+  const paint = () => $("autoOutText").textContent = `Signing out in ${left} s — next operator can sign in.`;
+  paint(); clearInterval(autoOutTimer);
+  autoOutTimer = setInterval(() => { if (--left <= 0) { stayIn(); logout(); } else paint(); }, 1000);
+}
+function stayIn() { clearInterval(autoOutTimer); autoOutTimer = null; $("autoOut").classList.add("hidden"); lastTap = Date.now(); }
+
+// Checked every 30 s: an operator left signed in with nothing running gets signed out
+setInterval(() => {
+  const s = store.get("session");
+  if (s && s.role !== "supervisor" && !store.get("active") && !autoOutTimer &&
+      Date.now() - lastTap > IDLE_SIGN_OUT_MIN * 60000) {
+    logout(); toast("Signed out after 5 minutes without activity.");
+  }
+}, 30000);
 
 // ---- Upload to the Sheet ----
 // Each finished work order / shift is sent with its owner's PIN. Anything that fails stays
@@ -586,6 +620,7 @@ function finishWork() {
   const jobs = store.get("jobs", []); jobs.push(job); store.set("jobs", jobs);
   localStorage.removeItem("active"); $("delay").value = "";
   route(); pushLive(); sync();
+  startAutoOut();
 }
 
 // ---- Screens ----
