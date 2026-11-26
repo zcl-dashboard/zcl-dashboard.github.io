@@ -42,11 +42,17 @@
   .pill { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--line); color: var(--muted); }
   .pill.sync { background: #3b2d0c; color: var(--brand); }
   .hidden { display: none !important; }
-  .tabs { position: sticky; top: 0; z-index: 5; display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px;
+  .tabs { position: sticky; top: 0; z-index: 5; display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px;
     background: var(--bg); padding: 6px 0 12px; }
-  .tabs button { padding: 10px 4px; font-size: 13px; border-radius: 10px; border: 1px solid var(--line);
+  .tabs button { padding: 10px 2px; font-size: 12px; border-radius: 10px; border: 1px solid var(--line);
     background: var(--card); color: var(--muted); }
   .tabs button.on { background: var(--brand); color: #111; border-color: var(--brand); font-weight: 700; }
+  .st { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--line); color: var(--muted); white-space: nowrap; }
+  .st.Assigned { background: #13304d; color: #8cc4ff; } .st.In { background: #10351f; color: var(--go); }
+  .st.Part { background: #3b2d0c; color: var(--brand); } .st.Done { background: var(--line); color: var(--text); }
+  .st.Cancelled { opacity: .5; }
+  .plan { display: flex; justify-content: space-between; align-items: center; width: 100%; text-align: left;
+    padding: 14px; margin-top: 8px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--text); font-size: 16px; }
   .role-h { margin: 14px 0 4px; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--brand); }
 </style>
 </head>
@@ -76,14 +82,11 @@
       <div style="text-align:right"><small class="muted">On duty</small><br><b id="onDuty">—</b></div>
     </div>
     <div class="card">
-      <label style="margin-top:0">Task</label>
-      <div class="chips" id="taskChips"></div>
-      <label>Equipment</label>
-      <select id="equipment"></select>
-      <label>Truck / wagon ref (optional)</label>
-      <input id="truck" placeholder="e.g. T123 ABC">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <b>My orders</b><button class="chip" onclick="loadMyOrders()">↻ Refresh</button>
+      </div>
+      <div id="myOrders"></div>
       <div class="err" id="jobErr"></div>
-      <button class="big go" onclick="beginWork()">▶ Begin Work</button>
     </div>
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center">
@@ -105,13 +108,19 @@
 
   <!-- CONTAINER: ready to start the next one -->
   <div class="card" id="ctrReady">
-    <b>Next container</b>
-    <label>Container number</label>
-    <input id="container" placeholder="e.g. MSCU1234567" autocapitalize="characters">
-    <label>Size</label>
-    <div class="chips" id="sizeChips"></div>
+    <b>Tap the next container to start it</b>
+    <div id="planList"></div>
+    <details style="margin-top:12px">
+      <summary class="muted" style="cursor:pointer">Container not on the list?</summary>
+      <label>Container number</label>
+      <input id="container" placeholder="e.g. MSCU1234567" autocapitalize="characters">
+      <label>Size</label>
+      <div class="chips" id="sizeChips"></div>
+      <label>Task</label>
+      <div class="chips" id="taskChips"></div>
+      <button class="big go" onclick="startContainer()">▶ Start this container</button>
+    </details>
     <div class="err" id="ctrErr"></div>
-    <button class="big go" onclick="startContainer()">▶ Start container</button>
   </div>
 
   <!-- CONTAINER: one in progress -->
@@ -143,11 +152,51 @@
   <!-- SUPERVISOR -->
   <section id="super" class="hidden">
     <nav class="tabs" id="supTabs">
-      <button data-tab="dash" onclick="setTab('dash')">📊 Dashboard</button>
+      <button data-tab="orders" onclick="setTab('orders')">📋 Orders</button>
       <button data-tab="live" onclick="setTab('live')">● Live</button>
-      <button data-tab="ops" onclick="setTab('ops')">👷 Operators</button>
+      <button data-tab="dash" onclick="setTab('dash')">📊 Stats</button>
+      <button data-tab="ops" onclick="setTab('ops')">🏆 Ranking</button>
       <button data-tab="team" onclick="setTab('team')">👥 Team</button>
     </nav>
+
+    <!-- ORDERS -->
+    <div class="card" data-tabs="orders">
+      <b>New order</b>
+      <label>Customer</label>
+      <select id="oCustomer"></select>
+      <details style="margin-top:8px">
+        <summary class="muted" style="cursor:pointer">+ Add a new customer</summary>
+        <input id="custName" placeholder="Customer name" style="margin-top:8px">
+        <button class="chip" style="margin-top:8px" onclick="addCustomer()">Save customer</button>
+      </details>
+      <label>Assign to</label>
+      <select id="oOperator"></select>
+      <label>Equipment</label>
+      <select id="oEquip"></select>
+      <label>Truck / wagon ref (optional)</label>
+      <input id="oTruck" placeholder="e.g. T123 ABC">
+
+      <div style="margin-top:16px;padding:12px;background:var(--bg);border-radius:10px">
+        <b>Containers</b>
+        <label>Container number</label>
+        <input id="oNo" placeholder="e.g. MSCU1234567" autocapitalize="characters">
+        <label>Size</label>
+        <div class="chips" id="oSizeChips"></div>
+        <label>Task</label>
+        <div class="chips" id="oTaskChips"></div>
+        <button class="chip" style="margin-top:12px;width:100%" onclick="addDraft()">+ Add container to order</button>
+        <div id="oList" style="margin-top:8px"></div>
+      </div>
+      <div class="err" id="oErr"></div>
+      <button class="big go" id="oSave" onclick="assignOrder()">Assign order</button>
+    </div>
+    <div class="card" data-tabs="orders">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <b>Orders</b> <button class="chip" onclick="renderOrders()">↻ Refresh</button>
+      </div>
+      <small class="muted">Open orders, plus finished ones from the last 7 days</small>
+      <div id="ordList"></div>
+    </div>
 
     <!-- Period picker: shared by Dashboard and Operators -->
     <div class="card" data-tabs="dash ops">
@@ -166,6 +215,10 @@
     <div class="card" data-tabs="dash">
       <b>Team totals</b>
       <div id="teamStats" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px"></div>
+    </div>
+    <div class="card" data-tabs="dash">
+      <b>Averages by customer</b>
+      <div id="custTable"></div>
     </div>
     <div class="card" data-tabs="dash">
       <b>Averages by task & size</b>
@@ -223,7 +276,7 @@ async function api(action, extra = {}, who = store.get("session")) {
   return res.json();
 }
 
-const TASKS = ["Load container", "Offload container", "Stuffing", "Destuffing", "Truck loading", "Other"];
+const TASKS = ["Stripping", "Stuffing", "Loading", "Offloading", "Truck loading", "Other"];
 const SIZES = ["20ft", "40ft"];
 const EQUIPMENT = ["Forklift", "Reach stacker", "Crane", "Manual", "Other"];
 
@@ -406,8 +459,36 @@ function pushLive() {
 }
 
 // ---- Jobs ----
-function beginWork() {
+// ---- Operator: my assigned orders ----
+async function loadMyOrders() {
+  paintMyOrders();                                    // cached list first (works offline)
+  try {
+    const r = await api("myOrders");
+    if (r.ok) { store.set("myOrders", r.orders); paintMyOrders(); }
+  } catch { $("jobErr").textContent = "No connection — showing the last known orders."; return; }
   $("jobErr").textContent = "";
+}
+function paintMyOrders() {
+  if ($("newJob").classList.contains("hidden")) return;
+  const list = store.get("myOrders", []);
+  $("myOrders").innerHTML = list.length ? list.map(o => {
+    const left = o.containers.filter(c => !c.done);
+    return `<div class="card" style="background:var(--bg);margin:10px 0 0">
+      <div style="display:flex;justify-content:space-between;gap:8px">
+        <div><b style="font-size:17px">${esc(o.customer)}</b><br>
+          <small class="muted">${left.length} container${left.length === 1 ? "" : "s"} · ${taskSummary(left)}</small><br>
+          <small class="muted">${esc(o.equipment)}${o.truck ? " · " + esc(o.truck) : ""} · assigned ${clock(o.assigned)}</small></div>
+        <span class="st ${o.status.split(" ")[0]}">${o.status}</span>
+      </div>
+      <button class="big go" style="margin-top:12px;padding:16px" onclick="beginWork('${o.id}')">▶ Begin</button>
+    </div>`;
+  }).join("") : `<p class="muted">No orders assigned to you right now. Ask your supervisor, then tap ↻ Refresh.</p>`;
+}
+
+function beginWork(orderId) {
+  $("jobErr").textContent = "";
+  const o = store.get("myOrders", []).find(x => x.id === orderId);
+  if (!o) return toast("Order not found — tap ↻ Refresh.");
   const s = store.get("session");
   // Idle gap = time since the operator's last finished job this session, or since login
   const lastEnd = store.get("jobs", [])
@@ -417,29 +498,40 @@ function beginWork() {
     id: "WO-" + Date.now().toString(36).toUpperCase(),
     operator: s.name, loginAt: s.loginAt,
     idleBefore: +((Date.now() - lastEnd) / 60000).toFixed(1),
-    task,
-    equipment: $("equipment").value, truck: $("truck").value.trim(),
+    orderId: o.id, customer: o.customer, assignedAt: o.assigned,
+    task: taskSummary(o.containers.filter(c => !c.done)),
+    equipment: o.equipment, truck: o.truck,
     start: Date.now(),
+    plan: o.containers.filter(c => !c.done),   // the supervisor's list still to do
     containers: [],   // finished containers, each with its own start/end
     current: null     // the container being worked on right now
   });
-  $("truck").value = "";
+  api("startOrder", { id: o.id }).catch(() => {});   // supervisor sees "In progress"
   route(); pushLive();
 }
 
 // ---- Containers inside a work order ----
+// Tapped from the supervisor's list
+function startPlanned(i) {
+  const c = store.get("active").plan[i];
+  beginContainer(c.no, c.size, c.task);
+}
+// Typed in by the operator (container not on the list)
 function startContainer() {
-  const a = store.get("active");
   const no = $("container").value.trim().toUpperCase();
   if (!no) { $("ctrErr").textContent = "Enter the container number."; return; }
-  if (a.containers.some(c => c.no === no)) { $("ctrErr").textContent = "This container is already done in this work order."; return; }
+  if (beginContainer(no, size, task)) $("container").value = "";
+}
+function beginContainer(no, cSize, cTask) {
+  const a = store.get("active");
+  if (a.containers.some(c => c.no === no)) { $("ctrErr").textContent = "This container is already done in this work order."; return false; }
   $("ctrErr").textContent = "";
   // Gap since the previous container finished (or since the work order began)
   const prevEnd = a.containers.length ? a.containers[a.containers.length - 1].end : a.start;
-  a.current = { no, size, start: Date.now(), gapBefore: +((Date.now() - prevEnd) / 60000).toFixed(1) };
+  a.current = { no, size: cSize, task: cTask, start: Date.now(), gapBefore: +((Date.now() - prevEnd) / 60000).toFixed(1) };
   store.set("active", a);
-  $("container").value = "";
   route(); pushLive();
+  return true;
 }
 function doneContainer() {
   const a = store.get("active");
@@ -474,9 +566,21 @@ function finishWork() {
   if (a.current) return toast("Mark the current container as done first.");
   const btn = $("finishBtn");
   const n = a.containers.length;
-  if (!armOrConfirm(btn, n ? `Tap again to finish (${n} container${n > 1 ? "s" : ""})` : "No containers — tap again to finish")) return;
+  const notDone = (a.plan || []).filter(c => !a.containers.some(x => x.no === c.no)).length;
+  if (!armOrConfirm(btn, notDone ? `${notDone} not done — tap again to finish` :
+      n ? `Tap again to finish (${n} container${n > 1 ? "s" : ""})` : "No containers — tap again to finish")) return;
   btn.textContent = btn.dataset.label;
   const end = Date.now();
+  if (n) a.task = taskSummary(a.containers);
+  // Update the cached "My orders": tick off done containers, drop the order if nothing is left
+  const mine = store.get("myOrders", []).map(o => {
+    if (o.id !== a.orderId) return o;
+    o.containers.forEach(c => { if (a.containers.some(x => x.no === c.no)) c.done = true; });
+    o.status = "Part done";
+    return o;
+  }).filter(o => o.containers.some(c => !c.done));
+  store.set("myOrders", mine);
+  delete a.plan;
   const job = { ...a, end, minutes: +((end - a.start) / 60000).toFixed(1), delay: $("delay").value, synced: false };
   const jobs = store.get("jobs", []); jobs.push(job); store.set("jobs", jobs);
   localStorage.removeItem("active"); $("delay").value = "";
@@ -498,27 +602,34 @@ function renderNewJob() {
     const avg = n ? j.containers.reduce((t, c) => t + c.minutes, 0) / n : 0;
     const detail = n ? `${n} container${n > 1 ? "s" : ""} · avg ${avg.toFixed(1)} min` : (j.truck || "—");
     return `
-    <div class="job"><div>${j.task}<br><small class="muted">${detail} · ${clock(j.start)}</small></div>
+    <div class="job"><div>${esc(j.customer || j.task)}<br><small class="muted">${detail} · ${clock(j.start)}</small></div>
     <div style="text-align:right"><b>${fmt(j.end - j.start)}</b><br>
     <span class="pill ${j.synced ? "" : "sync"}">${j.synced ? "saved" : "on phone"}</span></div></div>`;
   }).join("")
     : `<p class="muted">No jobs yet today.</p>`;
+  loadMyOrders();
 }
 function renderRunning(a) {
-  $("runInfo").textContent = `${a.task} · ${a.equipment}${a.truck ? " · " + a.truck : ""}`;
+  $("runInfo").textContent = `${a.customer || a.task} · ${a.equipment}${a.truck ? " · " + a.truck : ""}`;
+  const plan = a.plan || [];
+  const doneNos = a.containers.map(c => c.no);
+  const left = plan.map((c, i) => ({ ...c, i })).filter(c => !doneNos.includes(c.no));
+  $("planList").innerHTML = left.length ? left.map(c => `<button class="plan" onclick="startPlanned(${c.i})">
+      <span><b>${esc(c.no)}</b><br><small class="muted">${c.size} · ${esc(c.task)}</small></span><span style="color:var(--go)">▶</span></button>`).join("")
+    : plan.length ? `<p style="color:var(--go)">✓ All listed containers done — finish the work order below.</p>` : "";
   $("runStart").textContent = "Started " + clock(a.start);
 
   // Show either "start next container" or the running container
   $("ctrReady").classList.toggle("hidden", !!a.current);
   $("ctrActive").classList.toggle("hidden", !a.current);
-  if (a.current) $("ctrInfo").textContent = `${a.current.no} · ${a.current.size} · started ${clock(a.current.start)}`;
+  if (a.current) $("ctrInfo").textContent = `${a.current.no} · ${a.current.size} · ${a.current.task || ""} · started ${clock(a.current.start)}`;
 
   // Finished containers in this work order
   const n = a.containers.length;
   const avg = n ? a.containers.reduce((t, c) => t + c.minutes, 0) / n : 0;
   $("ctrStats").textContent = n ? `${n} done · avg ${avg.toFixed(1)} min` : "";
   $("ctrList").innerHTML = n ? a.containers.slice().reverse().map(c => `
-    <div class="job"><div>${c.no}<br><small class="muted">${c.size} · ${clock(c.start)}–${clock(c.end)}</small></div>
+    <div class="job"><div>${c.no}<br><small class="muted">${c.size} · ${c.task || ""} · ${clock(c.start)}–${clock(c.end)}</small></div>
     <div style="text-align:right"><b>${fmt(c.end - c.start)}</b></div></div>`).join("")
     : `<p class="muted">No containers finished yet.</p>`;
 
@@ -546,14 +657,119 @@ function periodRange(dateStr) {
 const dayKey = t => new Date(t).toLocaleDateString("en-CA");
 const nice = t => new Date(t).toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" });
 
+// ---- Supervisor: customers & orders ----
+let draft = [], oSize = SIZES[0], oTask = TASKS[0];
+const esc = t => String(t ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const ago = t => { const m = Math.round((Date.now() - t) / 60000); return m < 60 ? m + " min" : m < 1440 ? (m / 60).toFixed(1) + " h" : Math.round(m / 1440) + " d"; };
+const taskSummary = list => {
+  const n = {}; list.forEach(c => n[c.task] = (n[c.task] || 0) + 1);
+  return Object.entries(n).map(([t, k]) => `${k} ${t.toLowerCase()}`).join(" · ");
+};
+
+async function renderOrders() {
+  chips($("oSizeChips"), SIZES, oSize, v => oSize = v);
+  chips($("oTaskChips"), TASKS, oTask, v => oTask = v);
+  if (!$("oEquip").options.length) $("oEquip").innerHTML = EQUIPMENT.map(e => `<option>${e}</option>`).join("");
+  renderDraft();
+  $("ordList").innerHTML = `<p class="muted">Loading…</p>`;
+  try {
+    const [c, u, o] = await Promise.all([api("customers"), api("listUsers"), api("orders")]);
+    if (c.ok) {
+      const keep = $("oCustomer").value;
+      $("oCustomer").innerHTML = c.customers.length
+        ? `<option value="">— pick a customer —</option>` + c.customers.map(n => `<option>${esc(n)}</option>`).join("")
+        : `<option value="">No customers yet — add one below</option>`;
+      if (keep) $("oCustomer").value = keep;
+    }
+    if (u.ok) {
+      serverUsers = u.users;
+      const keep = $("oOperator").value;
+      const workers = u.users.filter(x => x.active && x.role !== "supervisor");
+      $("oOperator").innerHTML = `<option value="">— pick an operator —</option>` +
+        workers.map(x => `<option value="${esc(x.name)}">${esc(x.name)}${x.role === "clerk" ? " (clerk)" : ""}</option>`).join("");
+      if (keep) $("oOperator").value = keep;
+    }
+    if (!o.ok) return $("ordList").innerHTML = `<p class="muted">${esc(o.error)}</p>`;
+    const order = { "In progress": 0, "Part done": 1, Assigned: 2, Done: 3, Cancelled: 4 };
+    const list = o.orders.sort((a, b) => order[a.status] - order[b.status] || b.assigned - a.assigned);
+    $("ordList").innerHTML = list.length ? list.map(x => {
+      const done = x.containers.filter(c => c.done).length;
+      // How long the order sat before the operator began — the "waiting" the supervisor wants to see
+      const wait = x.started ? `started after ${Math.round((x.started - x.assigned) / 60000)} min`
+                 : x.status === "Assigned" ? `waiting ${ago(x.assigned)}` : "";
+      return `<details class="job" style="display:block">
+        <summary style="display:flex;justify-content:space-between;gap:8px;cursor:pointer;list-style:none">
+          <div><b>${esc(x.customer)}</b><br><small class="muted">${esc(x.operator)} · ${done}/${x.containers.length} containers · ${wait}</small></div>
+          <span class="st ${x.status.split(" ")[0]}">${x.status}</span>
+        </summary>
+        <div style="font-size:14px;margin-top:8px" class="muted">${x.id} · ${esc(x.equipment)}${x.truck ? " · " + esc(x.truck) : ""} · assigned ${clock(x.assigned)} by ${esc(x.assignedBy)}</div>
+        ${x.containers.map(c => `<div style="display:flex;justify-content:space-between;font-size:14px;margin-top:6px">
+          <span>${c.done ? "✅" : "⬜"} ${esc(c.no)} <small class="muted">${c.size}</small></span><span class="muted">${esc(c.task)}</span></div>`).join("")}
+        ${x.status === "Assigned" ? `<button class="chip" id="cx-${x.id}" style="margin-top:10px" onclick="cancelOrder('${x.id}')">Cancel order</button>` : ""}
+      </details>`;
+    }).join("") : `<p class="muted">No orders yet.</p>`;
+  } catch { $("ordList").innerHTML = `<p class="muted">No connection — orders can't load.</p>`; }
+}
+
+async function addCustomer() {
+  const name = $("custName").value.trim();
+  if (!name) return toast("Enter the customer name.");
+  try {
+    const r = await api("addCustomer", { customer: name });
+    if (!r.ok) return toast(r.error);
+    $("custName").value = ""; toast(`${name} added.`);
+    await renderOrders(); $("oCustomer").value = name;
+  } catch { toast("No connection — try again."); }
+}
+
+function addDraft() {
+  const no = $("oNo").value.trim().toUpperCase();
+  if (!no) return $("oErr").textContent = "Enter the container number.";
+  if (draft.some(c => c.no === no)) return $("oErr").textContent = `${no} is already in this order.`;
+  $("oErr").textContent = "";
+  draft.push({ no, size: oSize, task: oTask });
+  $("oNo").value = ""; $("oNo").focus();
+  renderDraft();
+}
+function removeDraft(i) { draft.splice(i, 1); renderDraft(); }
+function renderDraft() {
+  $("oList").innerHTML = draft.length ? `<small class="muted">${draft.length} container${draft.length > 1 ? "s" : ""} · ${taskSummary(draft)}</small>` +
+    draft.map((c, i) => `<div class="job" style="align-items:center"><span>${esc(c.no)} <small class="muted">${c.size} · ${c.task}</small></span>
+      <button class="chip" onclick="removeDraft(${i})">✕</button></div>`).join("") : "";
+}
+
+async function assignOrder() {
+  const order = { customer: $("oCustomer").value, operator: $("oOperator").value,
+    equipment: $("oEquip").value, truck: $("oTruck").value.trim(), containers: draft };
+  if (!order.customer) return $("oErr").textContent = "Pick a customer.";
+  if (!order.operator) return $("oErr").textContent = "Pick who does the work.";
+  if (!draft.length) return $("oErr").textContent = "Add at least one container.";
+  $("oErr").textContent = "Assigning…";
+  try {
+    const r = await api("assign", { order });
+    if (!r.ok) return $("oErr").textContent = r.error;
+    $("oErr").textContent = ""; draft = []; $("oTruck").value = "";
+    toast(`Order ${r.id} assigned to ${order.operator}.`);
+    renderOrders();
+  } catch { $("oErr").textContent = "No connection — try again."; }
+}
+
+async function cancelOrder(id) {
+  if (!armOrConfirm($("cx-" + id), "Tap again to cancel")) return;
+  try { const r = await api("cancelOrder", { id }); toast(r.ok ? "Order cancelled." : r.error); renderOrders(); }
+  catch { toast("No connection — try again."); }
+}
+
 // ---- Supervisor tabs ----
-let supTab = store.get("supTab", "dash");
+let supTab = store.get("supTab", "orders");
 function setTab(t) {
   supTab = t; store.set("supTab", t);
   document.querySelectorAll("#supTabs button").forEach(b => b.classList.toggle("on", b.dataset.tab === t));
   document.querySelectorAll("#super [data-tabs]").forEach(el =>
     el.classList.toggle("hidden", !el.dataset.tabs.split(" ").includes(t)));
-  if (t === "team") renderUsers(); else renderSuper();   // renderSuper also decides the trend card
+  if (t === "team") renderUsers();
+  else if (t === "orders") renderOrders();
+  else refreshSuper();  // fresh data each time a tab opens; also decides the trend card
 }
 
 let report = null, reportKey = "";
@@ -583,7 +799,9 @@ function renderSuper() {
     : "⚠ Can't reach the Sheet — showing only this phone's records.";
   const jobs = fromSheet ? report.jobs : store.get("jobs", []).filter(j => onDay(j.start));
   const shifts = fromSheet ? report.shifts : store.get("shifts", []).filter(s => onDay(s.loginAt));
-  const ctrs = jobs.flatMap(j => (j.containers || []).map(c => ({ ...c, operator: j.operator, task: j.task })));
+  // Each container keeps its own task (orders can mix stripping, stuffing…); older records fall back to the job's task
+  const ctrs = jobs.flatMap(j => (j.containers || []).map(c => ({ ...c, operator: j.operator, task: c.task || j.task, customer: j.customer || "—" })));
+  const waited = jobs.filter(j => j.assignedAt && j.start >= j.assignedAt).map(j => (j.start - j.assignedAt) / 60000);
   const teamAvg = avgOf(ctrs, c => c.minutes);
   const woHours = jobs.reduce((t, j) => t + j.minutes, 0) / 60;
 
@@ -594,7 +812,17 @@ function renderSuper() {
     stat("Avg per container", ctrs.length ? teamAvg.toFixed(1) + " min" : "—") +
     stat("Containers / hour", woHours ? (ctrs.length / woHours).toFixed(1) : "—") +
     stat("Avg work order", jobs.length ? avgOf(jobs, j => j.minutes).toFixed(0) + " min" : "—") +
-    stat("Delays reported", jobs.filter(j => j.delay).length);
+    stat("Delays reported", jobs.filter(j => j.delay).length) +
+    stat("Avg wait to start", waited.length ? (waited.reduce((t, m) => t + m, 0) / waited.length).toFixed(0) + " min" : "—");
+
+  // Average per customer: whose containers take longest?
+  const byCust = {};
+  ctrs.forEach(c => (byCust[c.customer] ||= []).push(c));
+  $("custTable").innerHTML = Object.keys(byCust).length ? Object.entries(byCust)
+    .sort((x, y) => y[1].length - x[1].length)
+    .map(([k, list]) => `<div class="job"><div>${esc(k)}<br><small class="muted">${list.length} containers · ${taskSummary(list)}</small></div>
+      <div style="text-align:right"><b>${avgOf(list, c => c.minutes).toFixed(1)} min</b><br><small class="muted">average</small></div></div>`).join("")
+    : `<p class="muted">No containers in this period.</p>`;
 
   // Average per task + size (a 40ft load shouldn't be judged against a 20ft one)
   const groups = {};
@@ -663,10 +891,10 @@ function renderSuper() {
         Avg gap between containers: <b>${r.gap.toFixed(1)} min</b> · Idle before work orders: <b>${r.idle.toFixed(0)} min</b>
       </div>
       ${r.wo.map(j => `<div style="margin-top:10px;padding:10px;background:var(--bg);border-radius:10px;font-size:14px">
-        <b>${j.task}</b> · ${j.equipment} · ${clock(j.start)}–${clock(j.end)} (${fmt(j.end - j.start)})
+        <b>${esc(j.customer || j.task)}</b> · ${j.equipment} · ${clock(j.start)}–${clock(j.end)} (${fmt(j.end - j.start)})
         ${j.delay ? `<br><span style="color:var(--stop)">Delay: ${j.delay}</span>` : ""}
         ${(j.containers || []).map(c => `<div style="display:flex;justify-content:space-between;margin-top:6px">
-          <span>${c.no} <small class="muted">${c.size}</small></span><span>${fmt(c.end - c.start)}</span></div>`).join("")}
+          <span>${c.no} <small class="muted">${c.size} · ${c.task || ""}</small></span><span>${fmt(c.end - c.start)}</span></div>`).join("")}
       </div>`).join("")}
     </details>`).join("")
     : `<p class="muted">No activity in this period.</p>`;
@@ -677,13 +905,12 @@ function route() {
   const s = store.get("session"), a = store.get("active");
   $("who").textContent = s ? s.name : "";
   if (!s) { fillLoginNames(); return show("login"); }
-  if (s.role === "supervisor") { show("super"); renderSuper(); return setTab(supTab); }
+  if (s.role === "supervisor") { show("super"); return setTab(supTab); }
   if (a) { show("running"); return renderRunning(a); }
   show("newJob"); renderNewJob();
 }
 
 // ---- Start ----
-$("equipment").innerHTML = EQUIPMENT.map(e => `<option>${e}</option>`).join("");
 chips($("taskChips"), TASKS, task, v => task = v);
 chips($("sizeChips"), SIZES, size, v => size = v);
 route(); sync();
@@ -691,7 +918,7 @@ route(); sync();
 window.addEventListener("online", () => { toast("Back online — uploading…"); sync(); });
 setInterval(() => {
   sync();
-  if (!$("super").classList.contains("hidden")) refreshSuper();
+  if (!$("super").classList.contains("hidden") && ["dash", "live", "ops"].includes(supTab)) refreshSuper();
 }, 60000);
 </script>
 </body>
