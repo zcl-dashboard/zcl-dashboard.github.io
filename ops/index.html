@@ -680,6 +680,8 @@ async function renderOrders() {
         ? `<option value="">— pick a customer —</option>` + c.customers.map(n => `<option>${esc(n)}</option>`).join("")
         : `<option value="">No customers yet — add one below</option>`;
       if (keep) $("oCustomer").value = keep;
+    } else {
+      $("oCustomer").innerHTML = `<option value="">⚠ Can't load customers: ${esc(c.error)}</option>`;
     }
     if (u.ok) {
       serverUsers = u.users;
