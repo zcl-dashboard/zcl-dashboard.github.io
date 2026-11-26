@@ -830,8 +830,8 @@ async function downloadReport() {
       const j = jobOf(c.wo);
       return { Date: new Date(c.start).toLocaleDateString("en-GB"), Operator: c.operator, "Work done": c.task,
         Container: c.no, Size: c.size, Customer: c.customer, Equipment: j.equipment || "",
-        Started: new Date(c.start).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }),
-        Finished: new Date(c.end).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }),
+        Started: new Date(c.start).toLocaleTimeString("en-GB"),      // exact, hh:mm:ss
+        Finished: new Date(c.end).toLocaleTimeString("en-GB"),
         "Time taken (h:mm:ss)": hm(c.minutes), Minutes: c.minutes, "Delay on work order": j.delay || "", "Order ID": j.orderId || "" };
     });
 
