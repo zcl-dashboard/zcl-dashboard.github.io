@@ -41,7 +41,13 @@
   .job:last-child { border-bottom: 0; }
   .pill { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--line); color: var(--muted); }
   .pill.sync { background: #3b2d0c; color: var(--brand); }
-  .hidden { display: none; }
+  .hidden { display: none !important; }
+  .tabs { position: sticky; top: 0; z-index: 5; display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px;
+    background: var(--bg); padding: 6px 0 12px; }
+  .tabs button { padding: 10px 4px; font-size: 13px; border-radius: 10px; border: 1px solid var(--line);
+    background: var(--card); color: var(--muted); }
+  .tabs button.on { background: var(--brand); color: #111; border-color: var(--brand); font-weight: 700; }
+  .role-h { margin: 14px 0 4px; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--brand); }
 </style>
 </head>
 <body>
@@ -136,7 +142,15 @@
 
   <!-- SUPERVISOR -->
   <section id="super" class="hidden">
-    <div class="card">
+    <nav class="tabs" id="supTabs">
+      <button data-tab="dash" onclick="setTab('dash')">📊 Dashboard</button>
+      <button data-tab="live" onclick="setTab('live')">● Live</button>
+      <button data-tab="ops" onclick="setTab('ops')">👷 Operators</button>
+      <button data-tab="team" onclick="setTab('team')">👥 Team</button>
+    </nav>
+
+    <!-- Period picker: shared by Dashboard and Operators -->
+    <div class="card" data-tabs="dash ops">
       <label style="margin-top:0">Period</label>
       <div class="chips" id="periodChips"></div>
       <label>Pick any date in the period</label>
@@ -146,23 +160,38 @@
         <small class="muted" id="syncNote"></small>
         <button class="chip" onclick="refreshSuper()">↻ Refresh</button>
       </div>
-      <div id="teamStats" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px"></div>
     </div>
-    <div class="card">
+
+    <!-- DASHBOARD -->
+    <div class="card" data-tabs="dash">
+      <b>Team totals</b>
+      <div id="teamStats" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px"></div>
+    </div>
+    <div class="card" data-tabs="dash">
       <b>Averages by task & size</b>
       <div id="avgTable"></div>
     </div>
-    <div class="card hidden" id="trendCard">
+    <div class="card hidden" id="trendCard" data-tabs="dash">
       <b>Daily trend</b> <small class="muted">· avg minutes per container</small>
       <div id="trendList"></div>
     </div>
-    <div id="liveList"></div>
-    <div class="card">
+
+    <!-- LIVE -->
+    <div data-tabs="live">
+      <div id="liveList"></div>
+      <div class="card" id="liveEmpty"><p class="muted" style="margin:0">Nobody is on a work order right now.</p></div>
+      <button class="chip" onclick="refreshSuper()">↻ Refresh</button>
+    </div>
+
+    <!-- OPERATORS -->
+    <div class="card" data-tabs="ops">
       <b>Operators</b> <small class="muted">· fastest avg per container first</small>
       <div id="opList"></div>
     </div>
-    <div class="card">
-      <b>Team accounts</b> <small class="muted">· add or change logins</small>
+
+    <!-- TEAM -->
+    <div class="card" data-tabs="team">
+      <b>Add or change an account</b>
       <label>Full name</label>
       <input id="uName" placeholder="e.g. John Mwakalinga">
       <label>PIN (4–6 digits)</label>
@@ -171,8 +200,11 @@
       <div class="chips" id="roleChips"></div>
       <div class="err" id="uErr"></div>
       <button class="big go" id="uSave" onclick="saveUser()">+ Save account</button>
-      <div id="userList" style="margin-top:10px"></div>
     </div>
+    <div class="card" data-tabs="team">
+      <div id="userList"></div>
+    </div>
+
     <button class="big ghost" onclick="logout()">Sign out</button>
   </section>
 
@@ -233,6 +265,7 @@ async function fillLoginNames() {
   } catch { if (!store.get("names", []).length) $("loginErr").textContent = "No connection — can't load names yet."; }
 }
 
+const ROLES = ["operator", "clerk", "supervisor"];
 let newRole = "operator", serverUsers = [];
 async function saveUser() {
   const name = $("uName").value.trim().replace(/\s+/g, " "), pin = $("uPin").value.trim();
@@ -252,8 +285,8 @@ async function saveUser() {
 function editUser(i) {
   const u = serverUsers[i];
   $("uName").value = u.name; $("uPin").value = ""; newRole = u.role;
-  chips($("roleChips"), ["operator", "supervisor"], newRole, v => newRole = v);
-  $("uPin").focus(); toast(`Enter a new PIN for ${u.name}, then Save.`);
+  chips($("roleChips"), ROLES, newRole, v => newRole = v);
+  $("uPin").focus(); toast(`Set a new PIN and/or role for ${u.name}, then Save.`);
 }
 async function toggleUser(i) {
   const u = serverUsers[i];
@@ -265,21 +298,26 @@ async function toggleUser(i) {
   } catch { toast("No connection — try again."); }
 }
 async function renderUsers() {
-  chips($("roleChips"), ["operator", "supervisor"], newRole, v => newRole = v);
+  chips($("roleChips"), ROLES, newRole, v => newRole = v);
   try {
     const r = await api("listUsers");
     if (!r.ok) return $("userList").innerHTML = `<p class="muted">${r.error}</p>`;
     serverUsers = r.users;
   } catch { return $("userList").innerHTML = `<p class="muted">No connection — accounts can't load.</p>`; }
-  $("userList").innerHTML = serverUsers.map((u, i) => `
+  const row = u => { const i = serverUsers.indexOf(u); return `
     <div class="job" style="align-items:center">
       <div style="${u.active ? "" : "opacity:.45"}">${u.name}<br>
-        <small class="muted">${u.role}${u.active ? "" : " · deactivated"}</small></div>
+        <small class="muted">${u.active ? "active" : "deactivated"}</small></div>
       <div style="display:flex;gap:6px">
-        <button class="chip" onclick="editUser(${i})">PIN</button>
+        <button class="chip" onclick="editUser(${i})">Edit</button>
         <button class="chip" onclick="toggleUser(${i})">${u.active ? "Deactivate" : "Activate"}</button>
       </div>
-    </div>`).join("");
+    </div>`; };
+  $("userList").innerHTML = ["supervisor", "clerk", "operator"].map(role => {
+    const list = serverUsers.filter(u => u.role === role);
+    return `<div class="role-h">${role}s · ${list.filter(u => u.active).length} active</div>` +
+      (list.length ? list.map(row).join("") : `<p class="muted" style="margin:4px 0">None yet.</p>`);
+  }).join("");
 }
 
 // ---- Login ----
@@ -508,6 +546,16 @@ function periodRange(dateStr) {
 const dayKey = t => new Date(t).toLocaleDateString("en-CA");
 const nice = t => new Date(t).toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" });
 
+// ---- Supervisor tabs ----
+let supTab = store.get("supTab", "dash");
+function setTab(t) {
+  supTab = t; store.set("supTab", t);
+  document.querySelectorAll("#supTabs button").forEach(b => b.classList.toggle("on", b.dataset.tab === t));
+  document.querySelectorAll("#super [data-tabs]").forEach(el =>
+    el.classList.toggle("hidden", !el.dataset.tabs.split(" ").includes(t)));
+  if (t === "team") renderUsers(); else renderSuper();   // renderSuper also decides the trend card
+}
+
 let report = null, reportKey = "";
 function refreshSuper() { reportKey = ""; renderSuper(); }
 function renderSuper() {
@@ -560,7 +608,7 @@ function renderSuper() {
     }).join("") : `<p class="muted">No containers in this period.</p>`;
 
   // Daily trend for week/month: is the team getting faster or slower?
-  $("trendCard").classList.toggle("hidden", period === "Day");
+  $("trendCard").classList.toggle("hidden", period === "Day" || supTab !== "dash");
   if (period !== "Day") {
     const byDay = {};
     ctrs.forEach(c => (byDay[dayKey(c.start)] ||= []).push(c));
@@ -577,6 +625,8 @@ function renderSuper() {
 
   // Work orders running right now on any operator's phone
   const live = fromSheet ? (report.live || []) : [store.get("active")].filter(Boolean);
+  $("liveEmpty").classList.toggle("hidden", live.length > 0);
+  document.querySelector('#supTabs [data-tab="live"]').textContent = live.length ? `● Live (${live.length})` : "● Live";
   $("liveList").innerHTML = live.length ? `<div class="card" style="border-color:var(--go)">
     <b style="color:var(--go)">● Working now (${live.length})</b>
     ${live.map(a => `<div class="job"><div><b>${a.operator}</b><br><small class="muted">${a.task} · ${a.containers.length} done
@@ -627,7 +677,7 @@ function route() {
   const s = store.get("session"), a = store.get("active");
   $("who").textContent = s ? s.name : "";
   if (!s) { fillLoginNames(); return show("login"); }
-  if (s.role === "supervisor") { show("super"); renderUsers(); return renderSuper(); }
+  if (s.role === "supervisor") { show("super"); renderSuper(); return setTab(supTab); }
   if (a) { show("running"); return renderRunning(a); }
   show("newJob"); renderNewJob();
 }
