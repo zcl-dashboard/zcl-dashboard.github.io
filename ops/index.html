@@ -209,6 +209,7 @@
         <small class="muted" id="syncNote"></small>
         <button class="chip" onclick="refreshSuper()">↻ Refresh</button>
       </div>
+      <button class="big go" id="dlBtn" style="padding:14px;font-size:16px" onclick="downloadReport()">⬇ Download Excel report</button>
     </div>
 
     <!-- DASHBOARD -->
@@ -760,6 +761,81 @@ async function cancelOrder(id) {
   if (!armOrConfirm($("cx-" + id), "Tap again to cancel")) return;
   try { const r = await api("cancelOrder", { id }); toast(r.ok ? "Order cancelled." : r.error); renderOrders(); }
   catch { toast("No connection — try again."); }
+}
+
+// ---- Excel report for the selected period ----
+// Uses SheetJS (loaded only when needed) to build a real .xlsx with one sheet per view.
+function loadXLSX() {
+  if (window.XLSX) return Promise.resolve();
+  return new Promise((ok, fail) => {
+    const sc = document.createElement("script");
+    sc.src = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+    sc.onload = ok; sc.onerror = () => fail(new Error("Couldn't load the Excel tool"));
+    document.head.appendChild(sc);
+  });
+}
+async function downloadReport() {
+  const btn = $("dlBtn"), label = btn.textContent;
+  if (!report || report.error) return toast("Report not loaded yet — tap ↻ Refresh, then try again.");
+  btn.textContent = "Preparing…";
+  try {
+    await loadXLSX();
+    const [from, to] = periodRange($("supDate").value);
+    const jobs = report.jobs, d = t => t ? new Date(t) : "", r1 = v => Math.round(v * 10) / 10;
+    const ctrs = jobs.flatMap(j => (j.containers || []).map(c => ({ ...c, wo: j.id, operator: j.operator,
+      customer: j.customer || "—", task: c.task || j.task })));
+    const avg = (l, f) => l.length ? r1(l.reduce((t, x) => t + f(x), 0) / l.length) : "";
+    const teamAvg = avg(ctrs, c => c.minutes);
+    const hours = jobs.reduce((t, j) => t + j.minutes, 0) / 60;
+    const waits = jobs.filter(j => j.assignedAt && j.start >= j.assignedAt).map(j => (j.start - j.assignedAt) / 60000);
+    const group = (l, k) => l.reduce((g, x) => ((g[k(x)] ||= []).push(x), g), {});
+
+    const summary = [
+      ["ZCL Ops Work Orders — report"], [],
+      ["Period", $("rangeLabel").textContent], ["From", new Date(from)], ["To (end)", new Date(to - 1)],
+      ["Prepared by", store.get("session").name], ["Prepared on", new Date()], [],
+      ["Work orders", jobs.length], ["Containers handled", ctrs.length],
+      ["Average minutes per container", teamAvg], ["Containers per hour", hours ? r1(ctrs.length / hours) : ""],
+      ["Average work order (min)", avg(jobs, j => j.minutes)], ["Delays reported", jobs.filter(j => j.delay).length],
+      ["Average wait to start (min)", waits.length ? r1(waits.reduce((t, m) => t + m, 0) / waits.length) : ""]
+    ];
+    const byOp = Object.entries(group(ctrs, c => c.operator)).map(([op, l]) => {
+      const wo = jobs.filter(j => j.operator === op);
+      return { Operator: op, "Work orders": wo.length, Containers: l.length, "Avg min / container": avg(l, c => c.minutes),
+        "vs team (min)": teamAvg === "" ? "" : r1(avg(l, c => c.minutes) - teamAvg),
+        "Avg gap between containers (min)": avg(l, c => c.gapBefore || 0),
+        "Idle before work orders (min)": r1(wo.reduce((t, j) => t + (j.idleBefore || 0), 0)),
+        Delays: wo.filter(j => j.delay).length };
+    }).sort((a, b) => a["Avg min / container"] - b["Avg min / container"]);
+    const byCust = Object.entries(group(ctrs, c => c.customer)).map(([k, l]) => ({ Customer: k, Containers: l.length,
+      "Avg min / container": avg(l, c => c.minutes), Stripping: l.filter(c => c.task === "Stripping").length,
+      Stuffing: l.filter(c => c.task === "Stuffing").length, Loading: l.filter(c => c.task === "Loading").length,
+      Offloading: l.filter(c => c.task === "Offloading").length }));
+    const byTask = Object.entries(group(ctrs, c => c.task + "|" + c.size)).map(([k, l]) => {
+      const m = l.map(c => c.minutes);
+      return { Task: k.split("|")[0], Size: k.split("|")[1], Containers: l.length, "Avg min": avg(l, c => c.minutes),
+        Fastest: r1(Math.min(...m)), Slowest: r1(Math.max(...m)) };
+    });
+    const woRows = jobs.map(j => ({ "WO ID": j.id, Date: d(j.start), Operator: j.operator, Customer: j.customer || "",
+      "Order ID": j.orderId || "", Equipment: j.equipment, "Truck/Wagon": j.truck || "", Start: d(j.start), End: d(j.end),
+      Minutes: j.minutes, Containers: (j.containers || []).length, Delay: j.delay || "",
+      "Wait to start (min)": j.assignedAt ? r1((j.start - j.assignedAt) / 60000) : "" }));
+    const ctrRows = ctrs.map(c => ({ "WO ID": c.wo, Operator: c.operator, Customer: c.customer, Container: c.no,
+      Size: c.size, Task: c.task, Start: d(c.start), End: d(c.end), Minutes: c.minutes, "Gap before (min)": c.gapBefore }));
+
+    const wb = XLSX.utils.book_new();
+    const add = (name, ws, widths) => { ws["!cols"] = widths.map(w => ({ wch: w })); XLSX.utils.book_append_sheet(wb, ws, name); };
+    add("Summary", XLSX.utils.aoa_to_sheet(summary), [32, 28]);
+    add("By operator", XLSX.utils.json_to_sheet(byOp), [24, 12, 12, 18, 14, 28, 26, 8]);
+    add("By customer", XLSX.utils.json_to_sheet(byCust), [26, 12, 18, 10, 10, 10, 12]);
+    add("By task & size", XLSX.utils.json_to_sheet(byTask), [16, 8, 12, 10, 10, 10]);
+    add("Work orders", XLSX.utils.json_to_sheet(woRows), [14, 12, 20, 20, 18, 14, 12, 18, 18, 9, 11, 20, 18]);
+    add("Containers", XLSX.utils.json_to_sheet(ctrRows), [14, 20, 20, 15, 7, 13, 18, 18, 9, 15]);
+    const tag = new Date(from).toLocaleDateString("en-CA") + (period === "Day" ? "" : "_" + period.toLowerCase());
+    XLSX.writeFile(wb, `ZCL-Ops-Report_${tag}.xlsx`, { cellDates: true });
+    toast("Report downloaded.");
+  } catch (e) { toast("Couldn't create the report: " + e.message); }
+  finally { btn.textContent = label; }
 }
 
 // ---- Supervisor tabs ----
