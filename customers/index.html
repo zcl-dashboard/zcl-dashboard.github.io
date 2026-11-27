@@ -833,6 +833,8 @@ function renderExpiring() {
 
 /* ----- Import: the commitment workbook (monthly sheets) or a plain customer list ----- */
 const norm = h => String(h ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+// Company-name key for matching: Limited→ltd, Company→co, &→and, punctuation and spaces ignored
+const nameKey = n => norm(String(n ?? "").toLowerCase().replace(/&/g, " and ").replace(/\blimited\b/g, "ltd").replace(/\bcompany\b/g, "co").replace(/\bcorporation\b/g, "corp"));
 const COLS = {
   Company: ["company", "companyname", "customer", "customername", "client", "clientname", "name"],
   "Registration / TIN": ["registrationtin", "registration", "tin", "tinno", "regno"], Country: ["country"],
@@ -883,12 +885,16 @@ async function readImport(file) {
 function buildImport() {
   const wb = impWB, year = Number($("impYear").value) || new Date().getFullYear();
   const out = { customers: [], contracts: [], volumes: [] }, notes = [], merges = [];
-  // One customer key per company; later spellings that start the same way are treated as the same company
-  const canon = {}, canonName = raw => {
-    const nm = String(raw).trim().replace(/\s+/g, " "), k = norm(nm);
-    if (canon[k]) return canon[k];
+  // One customer per company. Existing customers come first, so a file's spelling is merged INTO the database record.
+  // Ltd = Limited, Co = Company, & = and; a longer name that starts with an existing one (e.g. "… (ARAVAT)") is the same company.
+  const canon = {}, existing = new Set();
+  D.customers.forEach(c => { const k = nameKey(c.Company); canon[k] = c.Company; existing.add(c.Company); });
+  const canonName = raw => {
+    const nm = String(raw).trim().replace(/\s+/g, " "), k = nameKey(nm);
+    const note = to => { if (to !== nm && !merges.some(mm => mm[1] === nm)) merges.push([to, nm]); return to; };
+    if (canon[k]) return note(canon[k]);
     const hit = Object.keys(canon).find(x => Math.min(x.length, k.length) >= 10 && (x.startsWith(k) || k.startsWith(x)));
-    if (hit) { if (!merges.some(mm => mm[1] === nm)) merges.push([canon[hit], nm]); return canon[k] = canon[hit]; }
+    if (hit) return canon[k] = note(canon[hit]);
     return canon[k] = nm;
   };
   const monthly = [], plain = [];
@@ -994,16 +1000,16 @@ function buildImport() {
   if (clash.size) notes.push(`Skipped ${clash.size} month total${clash.size > 1 ? "s" : ""} because weekly figures are already entered for that customer and month (adding them would count it twice): ${[...clash].slice(0, 8).map(esc).join(", ")}${clash.size > 8 ? "…" : ""}.`);
   if (noDate) notes.push(`${noDate} row${noDate > 1 ? "s have" : " has"} TEUs or containers but no date or month — skipped. Match a column to “Date of movement” or “Month”.`);
   $("impMapBox").innerHTML = mapHtml.length ? `<h3 style="margin:14px 0 4px">Match the columns</h3><p class="muted small" style="margin:0">The app guessed what each column is. Change any that are wrong — the summary below updates straight away.</p>` + mapHtml.join("") : "";
-  const firstBy = {}; out.customers = out.customers.filter(c => { const k = norm(c.Company); if (firstBy[k]) { Object.keys(c).forEach(f => { if (c[f] && !firstBy[k][f]) firstBy[k][f] = c[f]; }); return false; } return firstBy[k] = c; });
+  const firstBy = {}; out.customers = out.customers.filter(c => { const k = nameKey(c.Company); if (firstBy[k]) { Object.keys(c).forEach(f => { if (c[f] && !firstBy[k][f]) firstBy[k][f] = c[f]; }); return false; } return firstBy[k] = c; });
   impData = out;
-  const names = [...new Set(out.customers.map(c => norm(c.Company)))], have = new Set(D.customers.map(c => norm(c.Company)));
+  const names = [...new Set(out.customers.map(c => nameKey(c.Company)))], have = new Set(D.customers.map(c => nameKey(c.Company)));
   const monthsList = [...new Set(out.volumes.map(v => v.m))].sort((a, b) => a - b).map(m => MONTHS[m - 1].slice(0, 3)).join(", ");
   $("impYearBox").classList.toggle("hidden", !monthly.length && !needYear);
   $("impFileName").textContent = `${impName} · ${wb.SheetNames.length} sheet${wb.SheetNames.length > 1 ? "s" : ""}` + (monthly.length ? ` · ${monthly.length} monthly commitment sheet${monthly.length > 1 ? "s" : ""}` : "");
   const line = (b, t) => `<div class="line"><span>${t}</span><b>${b}</b></div>`;
   $("impSummary").innerHTML = line(names.filter(n => !have.has(n)).length, "New customers") + line(names.filter(n => have.has(n)).length, "Existing customers (blank cells won't overwrite)") +
     line(out.contracts.length, "Contracts / commitments") + line(out.volumes.length, "Weekly TEU entries" + (monthsList ? ` (${monthsList} ${year})` : "")) +
-    (merges.length ? `<div class="sub small"><b>Same company, different spelling — merged:</b><br>${merges.map(([a, b]) => `${esc(b)} → <b>${esc(a)}</b>`).join("<br>")}</div>` : "") +
+    (merges.length ? `<div class="sub small"><b>Same company, different spelling — merged and updated:</b><br>${merges.map(([a, b]) => `${esc(b)} → <b>${esc(a)}</b>${existing.has(a) ? " <span class='muted'>(existing customer)</span>" : ""}`).join("<br>")}</div>` : "") +
     (notes.length ? `<div class="sub small" style="border-left:3px solid var(--warn)">${notes.map(n => "⚠ " + n).join("<br>")}</div>` : "");
   $("impErr").textContent = names.length ? "" : "No customers found. A column called Customer name (or Company) is needed. Download the template to see the layout.";
   $("impGo").classList.toggle("hidden", !names.length);
