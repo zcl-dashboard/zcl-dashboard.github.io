@@ -51,6 +51,35 @@
     border-radius: 12px; text-align: center; font-size: 15px; box-shadow: 0 6px 20px rgba(0,0,0,.4); z-index: 9; }
   .login { max-width: 400px; margin: 40px auto; }
   h2 { font-size: 18px; margin: 0 0 4px; } h3 { font-size: 15px; margin: 0; }
+  /* Transporter profile */
+  .prof-head { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; align-items: flex-start; }
+  .prof-head h1 { font-size: 24px; margin: 0 0 4px; }
+  .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px 20px; margin-top: 14px; }
+  .facts div small { display: block; color: var(--muted); font-size: 12px; } .facts div span { font-size: 15px; }
+  .act { display: inline-flex; align-items: center; gap: 6px; padding: 9px 14px; border-radius: 999px; border: 1px solid var(--line);
+    color: var(--text); text-decoration: none; font-size: 14px; background: var(--bg); }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }
+  .stats div { background: var(--bg); border-radius: 10px; padding: 12px; } .stats small { color: var(--muted); font-size: 12px; }
+  .stats b { display: block; font-size: 24px; margin-top: 2px; }
+  .tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .tbl th { text-align: left; color: var(--muted); font-weight: 500; font-size: 12px; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+  .tbl td { padding: 9px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  .tbl tr:last-child td { border-bottom: 0; }
+  .scroll { overflow-x: auto; }
+  /* On phones each table row becomes a small stacked card */
+  @media (max-width: 640px) {
+    .tbl, .tbl tbody, .tbl tr, .tbl td { display: block; width: 100%; }
+    .tbl tr:first-child { display: none; }
+    .tbl tr { padding: 10px 0; border-bottom: 1px solid var(--line); } .tbl tr:last-child { border-bottom: 0; }
+    .tbl td { border: 0; padding: 2px 0; }
+    .tbl td[data-l]::before { content: attr(data-l) " · "; color: var(--muted); font-size: 12px; }
+  }
+  @media print {
+    :root { --bg: #fff; --card: #fff; --line: #ccc; --text: #111; --muted: #555; }
+    body { background: #fff; } header, .tabs, .no-print, #toast { display: none !important; }
+    .card { border: 1px solid #ccc; break-inside: avoid; } main { max-width: none; padding: 0; }
+    .pill { border-color: currentColor; } .act { border: 0; padding: 0; }
+  }
 </style>
 </head>
 <body>
@@ -122,9 +151,31 @@
       </div>
     </div>
 
-    <!-- DETAIL -->
+    <!-- PROFILE (read view) -->
+    <div id="vProfile" class="hidden">
+      <div class="row no-print" style="justify-content:space-between;margin-bottom:12px">
+        <button class="chip" onclick="setView('list')">← All transporters</button>
+        <div class="row"><button class="chip" onclick="print()">🖨 Print / PDF</button>
+          <button class="btn edit-only" onclick="setView('detail')">✏ Edit</button></div>
+      </div>
+      <div class="card">
+        <div class="prof-head">
+          <div><h1 id="pName"></h1><div class="muted" id="pSub"></div></div>
+          <div id="pPills" style="display:flex;gap:6px;flex-wrap:wrap"></div>
+        </div>
+        <div class="row no-print" id="pActions" style="margin-top:14px"></div>
+        <div class="facts" id="pFacts"></div>
+        <div id="pNotes"></div>
+      </div>
+      <div class="card"><h3 style="margin-bottom:10px">At a glance</h3><div class="stats" id="pStats"></div></div>
+      <div class="card"><h3 style="margin-bottom:6px">Fleet</h3><div class="scroll" id="pTrucks"></div></div>
+      <div class="card"><h3 style="margin-bottom:6px">Documents</h3><div class="scroll" id="pDocs"></div></div>
+      <p class="muted small" id="pMeta"></p>
+    </div>
+
+    <!-- DETAIL (edit form) -->
     <div id="vDetail" class="hidden">
-      <button class="chip" onclick="setView('list')" style="margin-bottom:12px">← All transporters</button>
+      <button class="chip" onclick="curId ? setView('profile') : setView('list')" style="margin-bottom:12px" id="dBack">← Back</button>
       <div class="card">
         <div class="row" style="justify-content:space-between"><h2 id="dTitle"></h2><span id="dStatus"></span></div>
         <div class="grid2">
@@ -327,9 +378,10 @@ function render() {
   const expCount = D.docs.filter(d => docState(d).rank < 2).length;
   const tabs = [["list", "🚚 Transporters"], ["expiring", `⚠ Expiring${expCount ? " (" + expCount + ")" : ""}`]];
   if (s.role === "admin") tabs.push(["team", "👥 Team"]);
-  const active = view === "detail" ? "list" : view;
+  const active = ["detail", "profile"].includes(view) ? "list" : view;
   $("tabs").innerHTML = tabs.map(([k, l]) => `<button class="chip ${k === active ? "on" : ""}" onclick="setView('${k}')">${l}</button>`).join("");
-  ["vList", "vDetail", "vExpiring", "vTeam", "vImport"].forEach(id => $(id).classList.add("hidden"));
+  ["vList", "vDetail", "vProfile", "vExpiring", "vTeam", "vImport"].forEach(id => $(id).classList.add("hidden"));
+  if (view === "profile") { $("vProfile").classList.remove("hidden"); renderProfile(); }
   if (view === "import") $("vImport").classList.remove("hidden");
   if (view === "list") { $("vList").classList.remove("hidden"); renderList(); }
   if (view === "detail") { $("vDetail").classList.remove("hidden"); renderDetail(); }
@@ -365,7 +417,8 @@ function renderList() {
 
 /* ----- Transporter detail ----- */
 let corSel = [];
-function openT(id) { curId = id; resetK(); resetD(); setView("detail"); }
+// Tapping a transporter opens the profile; a new one goes straight to the form
+function openT(id) { curId = id; resetK(); resetD(); setView(id ? "profile" : "detail"); }
 function renderDetail() {
   const t = curId ? tById(curId) : null, ro = !canEdit();
   $("dTitle").textContent = t ? t.Company : "New transporter";
@@ -403,6 +456,43 @@ function renderDetail() {
   $("dFor").innerHTML = `<option value="">Company</option>` + trucksOf(t.ID).filter(k => k.Active).map(k => `<option value="${k.ID}">Truck ${esc(k["Horse plate"])}</option>`).join("");
   $("dFor").value = keep;
 }
+function renderProfile() {
+  const t = tById(curId); if (!t) return setView("list");
+  const ks = trucksOf(t.ID), active = ks.filter(k => k.Active);
+  const ds = docsOf(t.ID).map(d => ({ d, s: docState(d) })).sort((a, b) => a.s.rank - b.s.rank || a.d.Expiry - b.d.Expiry);
+  const n = k => ds.filter(x => x.s.k === k).length;
+  $("pName").textContent = t.Company;
+  $("pSub").textContent = [t.Country, t.Corridors].filter(Boolean).join(" · ") || "No country or corridor set";
+  $("pPills").innerHTML = `<span class="pill s-${esc(t.Status)}">${esc(t.Status)}</span>${worstDoc(t.ID)}`;
+  // Contact shortcuts: call, WhatsApp, email
+  const tel = String(t.Phone || "").replace(/[^\d+]/g, ""), wa = tel.replace(/^\+/, "");
+  $("pActions").innerHTML = (tel ? `<a class="act" href="tel:${tel}">📞 Call</a><a class="act" href="https://wa.me/${wa}" target="_blank" rel="noopener">💬 WhatsApp</a>` : "") +
+    (t.Email ? `<a class="act" href="mailto:${esc(t.Email)}">✉ Email</a>` : "");
+  const fact = (l, v) => `<div><small>${l}</small><span>${v ? esc(v) : "<span class='muted'>—</span>"}</span></div>`;
+  $("pFacts").innerHTML = fact("Contact person", t["Contact person"]) + fact("Phone", t.Phone) + fact("Email", t.Email) +
+    fact("Registration / TIN", t["Registration / TIN"]) + fact("Country", t.Country) + fact("Corridors", t.Corridors);
+  $("pNotes").innerHTML = t.Notes ? `<div class="sub" style="margin-top:14px"><small class="muted">Notes</small><div style="white-space:pre-wrap;margin-top:4px">${esc(t.Notes)}</div></div>` : "";
+  const cap = active.reduce((s, k) => s + (Number(k["Capacity (t)"]) || 0), 0);
+  const st = (l, v, cls) => `<div><small>${l}</small><b class="${cls || ""}">${v}</b></div>`;
+  $("pStats").innerHTML = st("Active trucks", active.length) + st("Total capacity", cap ? cap + " t" : "—") +
+    st("Documents valid", n("ok"), "d-ok") + st("Expiring ≤ 30 days", n("soon"), n("soon") ? "d-soon" : "") + st("Expired", n("exp"), n("exp") ? "d-exp" : "");
+  // Fleet
+  $("pTrucks").innerHTML = ks.length ? `<table class="tbl"><tr><th>Horse</th><th>Trailer</th><th>Type</th><th>Capacity</th><th>Driver</th><th>Truck documents</th></tr>
+    ${ks.sort((a, b) => (b.Active - a.Active) || String(a["Horse plate"]).localeCompare(b["Horse plate"])).map(k => {
+      const kd = ds.filter(x => x.d["Truck ID"] === k.ID);
+      return `<tr style="${k.Active ? "" : "opacity:.5"}"><td><b>${esc(k["Horse plate"])}</b>${k.Active ? "" : "<br><small class='muted'>inactive</small>"}</td>
+        <td data-l="Trailer">${esc(k["Trailer plate"] || "—")}</td><td data-l="Type">${esc(k["Truck type"] || "—")}</td><td data-l="Capacity">${k["Capacity (t)"] ? k["Capacity (t)"] + " t" : "—"}</td>
+        <td data-l="Driver">${esc(k.Driver || "—")}${k["Driver phone"] ? ` <small class="muted">${esc(k["Driver phone"])}</small>` : ""}</td>
+        <td data-l="Documents">${kd.length ? kd.map(x => `<span class="pill d-${x.s.k}" title="${esc(x.s.label)}">${esc(x.d.Type)}</span>`).join(" ") : "<span class='muted'>—</span>"}</td></tr>`;
+    }).join("")}</table>` : `<p class="muted small">No trucks registered.</p>`;
+  // Documents
+  $("pDocs").innerHTML = ds.length ? `<table class="tbl"><tr><th>Document</th><th>For</th><th>Number</th><th>Expiry</th><th>Status</th></tr>
+    ${ds.map(({ d, s }) => `<tr><td><b>${esc(d.Type)}</b></td><td data-l="For">${d["Truck ID"] ? "Truck " + esc(plateOf(d["Truck ID"])) : "Company"}</td>
+      <td data-l="Number">${esc(d.Number || "—")}</td><td data-l="Expiry">${dateStr(d.Expiry)}</td><td><span class="pill d-${s.k}">${s.label}</span></td></tr>`).join("")}</table>`
+    : `<p class="muted small">No documents on file.</p>`;
+  $("pMeta").textContent = [t.Created ? `Added ${dateStr(t.Created)}${t["Created by"] ? " by " + t["Created by"] : ""}` : "",
+    t.Updated ? `last updated ${dateStr(t.Updated)}${t["Updated by"] ? " by " + t["Updated by"] : ""}` : ""].filter(Boolean).join(" · ");
+}
 function paintCor() {
   $("tCor").innerHTML = CORRIDORS.map(c => `<button class="chip ${corSel.includes(c) ? "on" : ""}" ${canEdit() ? "" : "disabled"}
     onclick="corSel=corSel.includes('${c}')?corSel.filter(x=>x!=='${c}'):[...corSel,'${c}'];paintCor()">${c}</button>`).join("");
@@ -417,7 +507,8 @@ async function saveT() {
     const r = await api("saveTransporter", { t });
     if (!r.ok) return $("tErr").textContent = r.error;
     $("tErr").textContent = ""; toast(curId ? "Transporter saved." : "Transporter added — now add trucks and documents.");
-    curId = r.id; await load();
+    const wasNew = !curId; curId = r.id; await load();
+    if (!wasNew) setView("profile");   // edits go back to the profile; a new transporter stays here to add trucks and documents
   } catch { $("tErr").textContent = "No connection — nothing was saved."; }
 }
 
