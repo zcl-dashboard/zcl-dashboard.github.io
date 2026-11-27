@@ -85,6 +85,21 @@
   body.tv #teamStats b { font-size: 34px !important; }
   body.tv .chart { height: 280px; }
   #tvClock { font-variant-numeric: tabular-nums; font-weight: 700; margin-right: 10px; }
+  /* Active-time timeline: one row per operator */
+  .tl-axis { position: relative; height: 18px; margin-left: 150px; font-size: 11px; color: var(--muted); }
+  .tl-axis span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+  .tl-row { display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); }
+  .tl-row:last-child { border-bottom: 0; }
+  .tl-name { font-size: 14px; line-height: 1.25; } .tl-name small { color: var(--muted); }
+  .tl-track { position: relative; height: 24px; background: var(--bg); border-radius: 6px; overflow: hidden; }
+  .tl-hr { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--grid); }
+  .tl-band { position: absolute; top: 0; bottom: 0; background: rgba(143,163,181,.16); }
+  .tl-bar { position: absolute; top: 4px; bottom: 4px; background: var(--s1); border-radius: 4px; min-width: 3px; }
+  .tl-bar.live { background: var(--go); }
+  .tl-times { grid-column: 2; font-size: 12px; color: var(--muted); margin-top: -2px; }
+  .tl-key { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin: 4px 0 8px; }
+  .tl-key i { display: inline-block; width: 14px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+  @media (max-width: 560px) { .tl-row { grid-template-columns: 92px minmax(0, 1fr); } .tl-axis { margin-left: 102px; } }
   .role-h { margin: 14px 0 4px; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--brand); }
 </style>
 </head>
@@ -264,6 +279,7 @@
     </div>
     <div class="dgrid" data-tabs="dash">
       <div class="card full"><b><span style="color:var(--go)">●</span> Working now</b><div id="dLive"></div></div>
+      <div class="card full"><b>Active time per operator</b><div class="sub" id="actSub"></div><div id="active"></div></div>
       <div class="card"><b>Containers handled</b><div class="sub" id="volSub"></div>
         <div class="chart"><canvas id="cVolume"></canvas></div><div id="tVolume"></div></div>
       <div class="card"><b>Average minutes per container</b><div class="sub" id="speedSub"></div>
@@ -933,6 +949,11 @@ async function downloadReport() {
     const wb = XLSX.utils.book_new();
     const add = (name, ws, widths) => { ws["!cols"] = widths.map(w => ({ wch: w })); XLSX.utils.book_append_sheet(wb, ws, name); };
     add("Summary", XLSX.utils.aoa_to_sheet(summary), [32, 28]);
+    const activeRows = jobs.slice().sort((a, b) => a.operator.localeCompare(b.operator) || a.start - b.start).map(j => ({
+      Date: new Date(j.start).toLocaleDateString("en-GB"), Operator: j.operator,
+      "Working from": new Date(j.start).toLocaleTimeString("en-GB"), "Working to": new Date(j.end).toLocaleTimeString("en-GB"),
+      "Active time (h:mm:ss)": hm(j.minutes), Minutes: j.minutes, Customer: j.customer || "", Containers: (j.containers || []).length, "WO ID": j.id }));
+    add("Active time", XLSX.utils.json_to_sheet(activeRows), [11, 20, 13, 13, 19, 9, 20, 11, 15]);
     add("Work done", XLSX.utils.json_to_sheet(workDone), [11, 20, 13, 15, 6, 20, 14, 9, 9, 18, 9, 20, 18]);
     add("By operator", XLSX.utils.json_to_sheet(byOp), [24, 12, 12, 18, 14, 28, 26, 8]);
     add("By customer", XLSX.utils.json_to_sheet(byCust), [26, 12, 18, 10, 10, 10, 12]);
@@ -1008,6 +1029,7 @@ async function renderCharts(jobs, ctrs, live, from, to, teamAvg) {
       <small class="muted">${(a.containers || []).length} done${a.current ? ` · on ${esc(a.current.no)} (${esc(a.current.task || "")}) since ${clock(a.current.start)}` : " · between containers"}</small></div>
       <div style="text-align:right"><b>${dur(Date.now() - a.start)}</b><br><small class="muted">on work order</small></div></div>`).join("")
     : `<p class="muted" style="margin:6px 0 0">Nobody is on a work order right now.</p>`;
+  renderActive(jobs, report && !report.error ? report.shifts || [] : [], live, from, to);
   try { await loadChartJS(); } catch { return toast("Charts need an internet connection."); }
   teamAvg = r1(teamAvg);
 
@@ -1061,6 +1083,66 @@ async function renderCharts(jobs, ctrs, live, from, to, teamAvg) {
   draw("cDelay", "bar", dl.map(x => x[0]), dl.map(x => x[1]), { horizontal: true, color: cssv("--s1"), unit: "work orders", count: true,
     empty: jobs.length ? "✓ No delays reported in this period." : "No data in this period." });
   table("tDelay", ["Reason", "Work orders"], dl);
+}
+
+// ---- Active time: when each operator was actually on a work order ----
+// Blue = finished work orders, green = still running, faint band = signed in (shift)
+function renderActive(jobs, shifts, live, from, to) {
+  const now = Date.now(), hm = t => new Date(t).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });   // 24h, short
+  const names = [...new Set([...jobs.map(j => j.operator), ...live.map(a => a.operator)])].sort();
+  if (!names.length) { $("actSub").textContent = ""; return $("active").innerHTML = `<p class="muted">No work in this period.</p>`; }
+  const spans = name => {
+    const list = jobs.filter(j => j.operator === name).map(j => ({ s: j.start, e: j.end, n: (j.containers || []).length, c: j.customer }));
+    const a = live.find(x => x.operator === name);
+    if (a && a.start >= from && a.start < to) list.push({ s: a.start, e: Math.min(now, to), n: (a.containers || []).length, c: a.customer, live: true });
+    return list.sort((x, y) => x.s - y.s);
+  };
+  const total = l => l.reduce((t, x) => t + (x.e - x.s), 0);
+
+  if (period === "Day") {
+    $("actSub").textContent = "Who was working when, today";
+    const rows = names.map(n => {
+      const sp = spans(n), a = live.find(x => x.operator === n);
+      const bands = shifts.filter(s => s.operator === n).map(s => ({ s: s.loginAt, e: s.logoutAt }));
+      if (a && a.loginAt) bands.push({ s: a.loginAt, e: now });
+      return { n, sp, bands };
+    });
+    const all = rows.flatMap(r => [...r.sp, ...r.bands]);
+    const lo = Math.min(7, ...all.map(x => new Date(x.s).getHours()));
+    const hi = Math.max(18, ...all.map(x => new Date(x.e).getHours() + 1));
+    const day0 = new Date(from), a0 = new Date(day0).setHours(lo), a1 = new Date(day0).setHours(hi);
+    const pct = t => Math.max(0, Math.min(100, (t - a0) / (a1 - a0) * 100));
+    const hours = Array.from({ length: hi - lo + 1 }, (_, i) => lo + i);
+    const step = innerWidth < 560 ? 3 : hi - lo > 12 ? 2 : 1;   // fewer hour labels on a phone
+    $("active").innerHTML = `<div class="tl-key"><span><i style="background:var(--s1)"></i>On a work order</span>
+        <span><i style="background:var(--go)"></i>Working now</span><span><i style="background:rgba(143,163,181,.3)"></i>Signed in</span></div>
+      <div class="tl-axis">${hours.filter(h => (h - lo) % step === 0).map(h => `<span style="left:${pct(new Date(day0).setHours(h))}%">${String(h).padStart(2, "0")}:00</span>`).join("")}</div>` +
+      rows.map(r => `<div class="tl-row">
+        <div class="tl-name"><b>${esc(r.n)}</b><br><small>${dur(total(r.sp))} active</small></div>
+        <div class="tl-track">${hours.map(h => `<div class="tl-hr" style="left:${pct(new Date(day0).setHours(h))}%"></div>`).join("")}
+          ${r.bands.map(b => `<div class="tl-band" style="left:${pct(b.s)}%;width:${pct(b.e) - pct(b.s)}%"></div>`).join("")}
+          ${r.sp.map(x => `<div class="tl-bar ${x.live ? "live" : ""}" title="${hm(x.s)}–${x.live ? "now" : hm(x.e)} · ${esc(x.c || "")} · ${x.n} containers"
+            style="left:${pct(x.s)}%;width:${pct(x.e) - pct(x.s)}%"></div>`).join("")}</div>
+        <div class="tl-times">${r.sp.map(x => `${hm(x.s)}–${x.live ? "now" : hm(x.e)}`).join(" · ") || "—"}</div>
+      </div>`).join("");
+    return;
+  }
+
+  // Week / month: per operator, expandable list of each day's from–to times
+  $("actSub").textContent = "Total time on work orders · tap a name for each day's times";
+  const byDay = l => l.reduce((g, x) => ((g[dayKey(x.s)] ||= []).push(x), g), {});
+  $("active").innerHTML = names.map(n => {
+    const sp = spans(n), days = byDay(sp);
+    return `<details class="job" style="display:block">
+      <summary style="display:flex;justify-content:space-between;cursor:pointer;list-style:none">
+        <div><b>${esc(n)}</b><br><small class="muted">${Object.keys(days).length} day${Object.keys(days).length === 1 ? "" : "s"} worked · ${sp.length} work orders</small></div>
+        <div style="text-align:right"><b>${dur(total(sp))}</b><br><small class="muted">active</small></div>
+      </summary>
+      ${Object.entries(days).sort().map(([d, l]) => `<div style="display:flex;justify-content:space-between;gap:10px;font-size:13px;margin-top:6px">
+        <span><b>${nice(new Date(d + "T12:00"))}</b> <span class="muted">${l.map(x => `${hm(x.s)}–${x.live ? "now" : hm(x.e)}`).join(" · ")}</span></span>
+        <span style="white-space:nowrap">${dur(total(l))}</span></div>`).join("")}
+    </details>`;
+  }).join("");
 }
 
 // ---- TV mode: dashboard only, today, full screen, refreshes every minute ----
