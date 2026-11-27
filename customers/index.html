@@ -478,9 +478,15 @@ function renderList() {
   const [y, m] = thisYM();
   const committed = D.customers.reduce((s, c) => s + commitment(c.ID, y, m), 0);
   const actual = D.customers.reduce((s, c) => s + monthActual(c.ID, y, m), 0);
-  const tile = (n, v, note) => `<div class="card tile" style="margin:0"><small>${n}</small><b>${v}</b>${note ? `<small>${note}</small>` : ""}</div>`;
+  const tile = (n, v, note, f, cls) => `<div class="card tile" style="margin:0;${f !== undefined ? "cursor:pointer" : ""}" ${f !== undefined ? `onclick="$('fCon').value='${f}';renderList()" title="Show these customers"` : ""}>
+    <small>${n}</small><b class="${cls || ""}">${v}</b>${note ? `<small>${note}</small>` : ""}</div>`;
+  // Contract monitoring: tap a tile to filter the list
+  const cs = D.customers.map(c => cState(c.ID).k), cnt = k => cs.filter(x => x === k).length;
   $("tiles").innerHTML = tile("Active customers", D.customers.filter(c => c.Status === "Active").length) +
-    tile("Active contracts", D.contracts.filter(k => ["ok", "soon"].includes(kState(k).k)).length) +
+    tile("Active contracts", cnt("ok") + cnt("soon"), "customers", "active", "d-ok") +
+    tile("Contracts expiring ≤ 30 days", cnt("soon"), "", "soon", cnt("soon") ? "d-soon" : "") +
+    tile("Contracts expired", cnt("exp"), "", "exp", cnt("exp") ? "d-exp" : "") +
+    tile("No contract", cnt("none"), "", "none") +
     tile(`Committed TEUs · ${MONTHS[m - 1]}`, fmtN(committed)) +
     tile(`Actual TEUs so far · ${MONTHS[m - 1]}`, fmtN(actual), committed ? Math.round(actual / committed * 100) + "% of commitment" : "");
   if (!$("fInd").options.length) $("fInd").innerHTML = opts(INDUSTRIES, "", "All industries");
