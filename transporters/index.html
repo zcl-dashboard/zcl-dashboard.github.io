@@ -144,9 +144,12 @@
             <button class="btn edit-only" onclick="openT(null)">+ New transporter</button>
           </div>
         </div>
-        <div class="grid2" style="margin-top:6px">
+        <div class="grid3" style="margin-top:6px">
           <div><label>Search</label><input id="q" placeholder="Company, plate, contact, phone…" oninput="renderList()"></div>
           <div><label>Corridor</label><select id="fCor" onchange="renderList()"></select></div>
+          <div><label>Contract</label><select id="fCon" onchange="renderList()">
+            <option value="">All contracts</option><option value="active">Active</option><option value="soon">Expiring ≤ 30 days</option>
+            <option value="exp">Expired</option><option value="none">No contract</option></select></div>
         </div>
         <label>Status</label><div class="chips" id="fStatus"></div>
         <div id="list" style="margin-top:8px"></div>
@@ -164,7 +167,7 @@
         <div class="card"><h3>Transporters by country</h3><div class="dsub">All statuses</div><div class="chart" id="w4"><canvas id="cCountry"></canvas></div></div>
         <div class="card full"><h3>Document compliance by type</h3><div class="dsub">Valid · expiring within 30 days · expired</div><div id="dCompliance"></div></div>
         <div class="card full"><h3>Upcoming expiries</h3><div class="dsub">Documents expiring each month · red = already expired</div><div class="chart" id="w5"><canvas id="cExp"></canvas></div></div>
-        <div class="card full"><h3>Needs attention</h3><div class="dsub">Approved or pending transporters with expired documents, no documents or no trucks</div><div id="dAttention"></div></div>
+        <div class="card full"><h3>Needs attention</h3><div class="dsub">Approved or pending transporters with an expired contract or documents, no contract, no documents or no trucks</div><div id="dAttention"></div></div>
       </div>
     </div>
 
@@ -218,6 +221,12 @@
           <div><label>Email</label><input id="tEmail" inputmode="email"></div>
           <div><label>Corridors served</label><div class="chips" id="tCor"></div></div>
         </div>
+        <div class="sub" style="margin-top:14px"><b>Contract</b> <span class="muted small">· status is worked out from the end date</span>
+          <div class="grid3">
+            <div><label>Contract number</label><input id="tCNo"></div>
+            <div><label>Start date</label><input id="tCStart" type="date"></div>
+            <div><label>End date</label><input id="tCEnd" type="date"></div>
+          </div></div>
         <label>Notes</label><textarea id="tNotes" rows="2"></textarea>
         <div class="err" id="tErr"></div>
         <div class="row"><button class="btn edit-only" onclick="saveT()">Save transporter</button>
@@ -268,7 +277,7 @@
 
     <!-- EXPIRING -->
     <div id="vExpiring" class="hidden card">
-      <h2>Documents expiring or expired</h2>
+      <h2>Contracts and documents expiring or expired</h2>
       <p class="muted small" style="margin:0 0 8px">Expired first, then those expiring within 30 days. Tap one to open the transporter.</p>
       <div id="expList"></div>
     </div>
@@ -395,6 +404,15 @@ function docState(d) {
   if (days <= 30) return { k: "soon", rank: 1, days, label: days === 0 ? "Expires today" : `Expires in ${days} day${days === 1 ? "" : "s"}` };
   return { k: "ok", rank: 2, days, label: "Valid to " + dateStr(d.Expiry) };
 }
+// Contract: Active (amber in its last 30 days) / Expired / No contract — always from the end date
+function contractState(t) {
+  if (!t["Contract end"]) return { k: "none", label: "No contract", short: "No contract" };
+  const days = Math.floor((t["Contract end"] - new Date().setHours(0, 0, 0, 0)) / 86400000);
+  if (days < 0) return { k: "exp", label: "Contract expired " + dateStr(t["Contract end"]), short: "Contract expired" };
+  if (days <= 30) return { k: "soon", label: `Contract active · expires in ${days} day${days === 1 ? "" : "s"}`, short: "Contract expiring", days };
+  return { k: "ok", label: "Contract active · to " + dateStr(t["Contract end"]), short: "Contract active" };
+}
+const contractPill = t => { const c = contractState(t); return `<span class="pill d-${c.k}" title="${esc(c.label)}">${c.short}</span>`; };
 const docsOf = id => D.docs.filter(d => d["Transporter ID"] === id);
 const trucksOf = id => D.trucks.filter(k => k["Transporter ID"] === id);
 const tById = id => D.transporters.find(t => t.ID === id);
@@ -409,7 +427,7 @@ function worstDoc(id) {
 function setView(v) { view = v; render(); scrollTo(0, 0); }
 function render() {
   const s = store.get(KEY);
-  const expCount = D.docs.filter(d => docState(d).rank < 2).length;
+  const expCount = D.docs.filter(d => docState(d).rank < 2).length + D.transporters.filter(t => ["exp", "soon"].includes(contractState(t).k)).length;
   const tabs = [["list", "🚚 Transporters"], ["dash", "📊 Dashboard"], ["expiring", `⚠ Expiring${expCount ? " (" + expCount + ")" : ""}`]];
   if (s.role === "admin") tabs.push(["team", "👥 Team"]);
   const active = ["detail", "profile"].includes(view) ? "list" : view;
@@ -439,6 +457,8 @@ function renderList() {
   const list = D.transporters.filter(t => {
     if (statusF !== "All" && t.Status !== statusF) return false;
     if (cor && !String(t.Corridors).includes(cor)) return false;
+    const con = $("fCon").value, ck = contractState(t).k;
+    if (con && !(con === "active" ? ["ok", "soon"].includes(ck) : ck === con)) return false;
     if (!q) return true;
     const hay = [t.Company, t["Registration / TIN"], t["Contact person"], t.Phone, t.Email, t.Country,
       ...trucksOf(t.ID).flatMap(k => [k["Horse plate"], k["Trailer plate"], k.Driver])].join(" ").toLowerCase();
@@ -446,7 +466,7 @@ function renderList() {
   }).sort((a, b) => String(a.Company).localeCompare(b.Company));
   $("list").innerHTML = list.length ? list.map(t => `<div class="item" onclick="openT('${t.ID}')">
       <div><b>${esc(t.Company)}</b><br><small class="muted">${esc(t.Country || "—")} · ${esc(t.Corridors || "no corridor set")} · ${(n => n + (n === 1 ? " truck" : " trucks"))(trucksOf(t.ID).filter(k => k.Active).length)}${t["Contact person"] ? " · " + esc(t["Contact person"]) : ""}${t.Phone ? " " + esc(t.Phone) : ""}</small></div>
-      <div style="text-align:right;display:flex;flex-direction:column;gap:6px;align-items:flex-end"><span class="pill s-${esc(t.Status)}">${esc(t.Status)}</span>${worstDoc(t.ID)}</div>
+      <div style="text-align:right;display:flex;flex-direction:column;gap:6px;align-items:flex-end"><span class="pill s-${esc(t.Status)}">${esc(t.Status)}</span>${contractPill(t)}${worstDoc(t.ID)}</div>
     </div>`).join("")
     : `<p class="muted">${D.transporters.length ? "No transporters match." : "No transporters yet." + (canEdit() ? " Tap “+ New transporter” to add the first one." : "")}</p>`;
 }
@@ -464,6 +484,7 @@ function renderDetail() {
   $("tStatus").innerHTML = opts(STATUSES, t?.Status || "Pending");
   $("tContact").value = t?.["Contact person"] || ""; $("tPhone").value = t?.Phone || ""; $("tEmail").value = t?.Email || "";
   $("tNotes").value = t?.Notes || ""; $("tErr").textContent = "";
+  $("tCNo").value = t?.["Contract number"] || ""; $("tCStart").value = isoDate(t?.["Contract start"]); $("tCEnd").value = isoDate(t?.["Contract end"]);
   corSel = t?.Corridors ? String(t.Corridors).split("; ").filter(Boolean) : [];
   paintCor();
   document.querySelectorAll("#vDetail input, #vDetail select, #vDetail textarea").forEach(e => e.disabled = ro);
@@ -499,14 +520,17 @@ function renderProfile() {
   const n = k => ds.filter(x => x.s.k === k).length;
   $("pName").textContent = t.Company;
   $("pSub").textContent = [t.Country, t.Corridors].filter(Boolean).join(" · ") || "No country or corridor set";
-  $("pPills").innerHTML = `<span class="pill s-${esc(t.Status)}">${esc(t.Status)}</span>${worstDoc(t.ID)}`;
+  $("pPills").innerHTML = `<span class="pill s-${esc(t.Status)}">${esc(t.Status)}</span>${contractPill(t)}${worstDoc(t.ID)}`;
   // Contact shortcuts: call, WhatsApp, email
   const tel = String(t.Phone || "").replace(/[^\d+]/g, ""), wa = tel.replace(/^\+/, "");
   $("pActions").innerHTML = (tel ? `<a class="act" href="tel:${tel}">📞 Call</a><a class="act" href="https://wa.me/${wa}" target="_blank" rel="noopener">💬 WhatsApp</a>` : "") +
     (t.Email ? `<a class="act" href="mailto:${esc(t.Email)}">✉ Email</a>` : "");
   const fact = (l, v) => `<div><small>${l}</small><span>${v ? esc(v) : "<span class='muted'>—</span>"}</span></div>`;
   $("pFacts").innerHTML = fact("Contact person", t["Contact person"]) + fact("Phone", t.Phone) + fact("Email", t.Email) +
-    fact("Registration / TIN", t["Registration / TIN"]) + fact("Country", t.Country) + fact("Corridors", t.Corridors);
+    fact("Registration / TIN", t["Registration / TIN"]) + fact("Country", t.Country) + fact("Corridors", t.Corridors) +
+    fact("Contract number", t["Contract number"]) +
+    fact("Contract period", t["Contract start"] || t["Contract end"] ? `${dateStr(t["Contract start"])} – ${dateStr(t["Contract end"])}` : "") +
+    `<div><small>Contract status</small><span class="d-${contractState(t).k}">${esc(contractState(t).label)}</span></div>`;
   $("pNotes").innerHTML = t.Notes ? `<div class="sub" style="margin-top:14px"><small class="muted">Notes</small><div style="white-space:pre-wrap;margin-top:4px">${esc(t.Notes)}</div></div>` : "";
   const cap = active.reduce((s, k) => s + (Number(k["Capacity (t)"]) || 0), 0);
   const st = (l, v, cls) => `<div><small>${l}</small><b class="${cls || ""}">${v}</b></div>`;
@@ -536,7 +560,9 @@ function paintCor() {
 async function saveT() {
   const t = { ID: curId || "", Company: $("tCompany").value, "Registration / TIN": $("tReg").value, Country: $("tCountry").value,
     Status: $("tStatus").value, "Contact person": $("tContact").value, Phone: $("tPhone").value, Email: $("tEmail").value,
-    Corridors: corSel.join("; "), Notes: $("tNotes").value };
+    Corridors: corSel.join("; "), Notes: $("tNotes").value,
+    "Contract number": $("tCNo").value, "Contract start": $("tCStart").value, "Contract end": $("tCEnd").value };
+  if (t["Contract start"] && t["Contract end"] && t["Contract end"] < t["Contract start"]) return $("tErr").textContent = "Contract end date is before the start date.";
   if (t.Company.trim().length < 2) return $("tErr").textContent = "Enter the company name.";
   $("tErr").textContent = "Saving…";
   try {
@@ -598,7 +624,11 @@ async function renderDash() {
   $("dTiles").innerHTML = tile("Transporters", T.length) + tile("Approved", by.Approved || 0) + tile("Pending approval", by.Pending || 0) +
     tile("Suspended / blacklisted", (by.Suspended || 0) + (by.Blacklisted || 0)) + tile("Active trucks", K.length) +
     tile("Fleet capacity", cap ? cap.toLocaleString() + " t" : "—") +
-    tile("Docs expiring ≤ 30 days", docS.filter(x => x.s.k === "soon").length) + tile("Expired docs", docS.filter(x => x.s.k === "exp").length);
+    tile("Docs expiring ≤ 30 days", docS.filter(x => x.s.k === "soon").length) + tile("Expired docs", docS.filter(x => x.s.k === "exp").length) +
+    tile("Active contracts", T.filter(t => ["ok", "soon"].includes(contractState(t).k)).length,
+      T.filter(t => contractState(t).k === "soon").length ? T.filter(t => contractState(t).k === "soon").length + " expiring ≤ 30 days" : "") +
+    tile("Expired contracts", T.filter(t => contractState(t).k === "exp").length) +
+    tile("No contract", T.filter(t => contractState(t).k === "none").length);
 
   // Status mix: one segmented bar with labelled legend
   $("dStatusMix").innerHTML = T.length ? `<div class="seg">${STATUSES.filter(st => by[st]).map(st => `<div title="${st}: ${by[st]}" style="flex:${by[st]};background:${STATUS_COLOR[st]}"></div>`).join("")}</div>
@@ -617,11 +647,13 @@ async function renderDash() {
   // Needs attention
   const att = T.filter(t => ["Approved", "Pending"].includes(t.Status)).map(t => {
     const ds = docsOf(t.ID).map(docState), why = [];
-    const ex = ds.filter(x => x.k === "exp").length;
+    const ex = ds.filter(x => x.k === "exp").length, ck = contractState(t).k;
+    if (ck === "exp") why.push(`<span class="d-exp">contract expired</span>`);
+    if (ck === "none" && t.Status === "Approved") why.push(`<span class="d-soon">no contract</span>`);
     if (ex) why.push(`<span class="d-exp">${ex} expired document${ex > 1 ? "s" : ""}</span>`);
     if (!ds.length) why.push(`<span class="d-soon">no documents</span>`);
     if (!trucksOf(t.ID).some(k => k.Active)) why.push(`<span class="d-soon">no active trucks</span>`);
-    return { t, why, rank: ex ? 0 : 1 };
+    return { t, why, rank: ex || ck === "exp" ? 0 : 1 };
   }).filter(x => x.why.length).sort((a, b) => a.rank - b.rank || String(a.t.Company).localeCompare(b.t.Company));
   $("dAttention").innerHTML = att.length ? att.map(({ t, why }) => `<div class="item" onclick="openT('${t.ID}')">
       <div><b>${esc(t.Company)}</b><br><small>${why.join(" · ")}</small></div><span class="pill s-${esc(t.Status)}" style="align-self:center">${esc(t.Status)}</span></div>`).join("")
@@ -702,11 +734,19 @@ async function removeD(id, btn) {
 function renderExpiring() {
   const list = D.docs.map(d => ({ d, s: docState(d), t: tById(d["Transporter ID"]) })).filter(x => x.s.rank < 2 && x.t)
     .sort((a, b) => a.d.Expiry - b.d.Expiry);
-  $("expList").innerHTML = list.length ? list.map(({ d, s, t }) => `<div class="item" onclick="openT('${t.ID}')">
+  const cons = D.transporters.map(t => ({ t, c: contractState(t) })).filter(x => ["exp", "soon"].includes(x.c.k))
+    .sort((a, b) => a.t["Contract end"] - b.t["Contract end"]);
+  const conHtml = cons.map(({ t, c }) => `<div class="item" onclick="openT('${t.ID}')">
+      <div><b>${esc(t.Company)}</b> <span class="muted small">· contract${t["Contract number"] ? " " + esc(t["Contract number"]) : ""}</span><br>
+        <small class="muted">${t.Phone ? esc(t["Contact person"] || "") + " " + esc(t.Phone) : "No phone saved"} · ends ${dateStr(t["Contract end"])}</small></div>
+      <span class="pill d-${c.k}" style="align-self:center">${c.k === "exp" ? "Contract expired" : "Expires in " + c.days + " day" + (c.days === 1 ? "" : "s")}</span></div>`).join("");
+  if (!list.length && !cons.length) return $("expList").innerHTML = `<p class="muted">✓ No documents or contracts expired or expiring in the next 30 days.</p>`;
+  $("expList").innerHTML = (cons.length ? `<p class="muted small" style="margin:8px 0 0;text-transform:uppercase;letter-spacing:.08em;color:var(--brand)">Contracts</p>` + conHtml : "") +
+    (list.length ? `<p class="muted small" style="margin:14px 0 0;text-transform:uppercase;letter-spacing:.08em;color:var(--brand)">Documents</p>` : "") +
+    list.map(({ d, s, t }) => `<div class="item" onclick="openT('${t.ID}')">
       <div><b>${esc(t.Company)}</b> <span class="muted small">· ${esc(d.Type)}${d["Truck ID"] ? " · truck " + esc(plateOf(d["Truck ID"])) : ""}</span><br>
         <small class="muted">${t.Phone ? esc(t["Contact person"] || "") + " " + esc(t.Phone) : "No phone saved"} · expiry ${dateStr(d.Expiry)}</small></div>
-      <span class="pill d-${s.k}" style="align-self:center">${s.label}</span></div>`).join("")
-    : `<p class="muted">✓ Nothing expired or expiring in the next 30 days.</p>`;
+      <span class="pill d-${s.k}" style="align-self:center">${s.label}</span></div>`).join("");
 }
 
 /* ----- Team (admin) ----- */
@@ -755,13 +795,15 @@ async function exportExcel() {
   const name = id => tById(id)?.Company || "";
   const T = D.transporters.map(t => ({ Company: t.Company, Status: t.Status, Country: t.Country, Corridors: t.Corridors,
     "Registration / TIN": t["Registration / TIN"], "Contact person": t["Contact person"], Phone: t.Phone, Email: t.Email,
+    "Contract number": t["Contract number"], "Contract start": t["Contract start"] ? new Date(t["Contract start"]) : "",
+    "Contract end": t["Contract end"] ? new Date(t["Contract end"]) : "", "Contract status": contractState(t).label,
     "Active trucks": trucksOf(t.ID).filter(k => k.Active).length, Notes: t.Notes }));
   const K = D.trucks.map(k => ({ Transporter: name(k["Transporter ID"]), "Horse plate": k["Horse plate"], "Trailer plate": k["Trailer plate"],
     Type: k["Truck type"], "Capacity (t)": k["Capacity (t)"], Driver: k.Driver, "Driver phone": k["Driver phone"], Active: k.Active ? "Yes" : "No" }));
   const Dc = D.docs.map(d => ({ Transporter: name(d["Transporter ID"]), "Applies to": d["Truck ID"] ? "Truck " + plateOf(d["Truck ID"]) : "Company",
     Type: d.Type, Number: d.Number, Expiry: new Date(d.Expiry), Status: docState(d).label }));
   const wb = XLSX.utils.book_new(), add = (n, rows, w) => { const ws = XLSX.utils.json_to_sheet(rows); ws["!cols"] = w.map(x => ({ wch: x })); XLSX.utils.book_append_sheet(wb, ws, n); };
-  add("Transporters", T, [28, 12, 12, 34, 18, 20, 16, 26, 12, 30]);
+  add("Transporters", T, [28, 12, 12, 34, 18, 20, 16, 26, 16, 12, 12, 30, 12, 30]);
   add("Trucks", K, [28, 13, 13, 12, 12, 20, 16, 8]);
   add("Documents", Dc, [28, 18, 28, 16, 12, 24]);
   XLSX.writeFile(wb, `ZCL-Transporters_${isoDate(Date.now())}.xlsx`, { cellDates: true });
@@ -783,7 +825,10 @@ const COLS = {
   Driver: ["driver", "drivername"], "Driver phone": ["driverphone", "drivermobile", "drivertel", "driverno"],
   DocType: ["documenttype", "doctype", "document"], Number: ["number", "documentnumber", "docno", "documentno", "policyno", "certificateno"],
   Expiry: ["expiry", "expirydate", "expires", "validto", "validuntil", "expiringon", "dateofexpiry"],
-  AppliesTo: ["appliesto"], Active: ["active"]
+  AppliesTo: ["appliesto"], Active: ["active"],
+  "Contract number": ["contractnumber", "contractno", "contract", "contractref", "agreementno"],
+  "Contract start": ["contractstart", "contractstartdate", "startdate", "contractfrom", "datesigned"],
+  "Contract end": ["contractend", "contractenddate", "contractexpiry", "contractexpirydate", "enddate", "contractto", "contractvaliduntil"]
 };
 const norm = h => String(h).toLowerCase().replace(/[^a-z0-9]/g, "");
 // Dates are pinned to midday so a time-zone difference can never move them to the day before
@@ -830,7 +875,8 @@ async function readImport(file) {
       if (!company) { noCompany++; return; }
       // Company details only from a general/transporters sheet (a docs sheet's "Status" is the document's status)
       if (!isTruck && !isDoc) out.transporters.push({ Company: company, "Registration / TIN": f["Registration / TIN"], Country: f.Country,
-        Corridors: fixCorridors(f.Corridors), "Contact person": f["Contact person"], Phone: String(f.Phone ?? ""), Email: f.Email, Status: f.Status, Notes: f.Notes });
+        Corridors: fixCorridors(f.Corridors), "Contact person": f["Contact person"], Phone: String(f.Phone ?? ""), Email: f.Email, Status: f.Status, Notes: f.Notes,
+        "Contract number": String(f["Contract number"] ?? ""), "Contract start": parseDate(f["Contract start"]) ?? "", "Contract end": parseDate(f["Contract end"]) ?? "" });
       if (!isDoc && String(f["Horse plate"] ?? "").trim()) out.trucks.push({ Company: company, "Horse plate": f["Horse plate"], "Trailer plate": f["Trailer plate"],
         "Truck type": f["Truck type"], "Capacity (t)": f["Capacity (t)"], Driver: f.Driver, "Driver phone": String(f["Driver phone"] ?? ""),
         Active: /^(no|false|0)$/i.test(String(f.Active ?? "").trim()) ? false : undefined });
@@ -885,7 +931,8 @@ async function downloadTemplate() {
   try { await loadXLSX(); } catch { return toast("Couldn't load the Excel tool."); }
   const wb = XLSX.utils.book_new(), add = (n, rows) => XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), n);
   add("Transporters", [{ Company: "Example Haulage Ltd", "Registration / TIN": "123-456-789", Country: "Tanzania", Corridors: "Dar es Salaam ⇄ Zambia",
-    "Contact person": "Jane Doe", Phone: "+255 700 000 000", Email: "ops@example.co.tz", Status: "Approved", Notes: "" }]);
+    "Contact person": "Jane Doe", Phone: "+255 700 000 000", Email: "ops@example.co.tz", Status: "Approved",
+    "Contract number": "ZCL/TR/2026/001", "Contract start": "01/01/2026", "Contract end": "31/12/2026", Notes: "" }]);
   add("Trucks", [{ Transporter: "Example Haulage Ltd", "Horse plate": "T 123 ABC", "Trailer plate": "T 456 DEF", Type: "Flatbed", "Capacity (t)": 34, Driver: "John Doe", "Driver phone": "+255 711 000 000" }]);
   add("Documents", [{ Transporter: "Example Haulage Ltd", "Applies to": "Company", Type: "Goods-in-transit insurance", Number: "GIT-0001", Expiry: "31/12/2027" },
     { Transporter: "Example Haulage Ltd", "Applies to": "Truck T 123 ABC", Type: "COMESA yellow card", Number: "YC-0001", Expiry: "30/06/2027" }]);
