@@ -286,6 +286,7 @@
       <div id="userList"></div>
     </div>
 
+    <a class="big ghost" href="dashboard/" style="display:block;text-align:center;text-decoration:none;border-radius:14px;margin-top:16px">📈 Open the charts dashboard</a>
     <button class="big ghost" onclick="logout()">Sign out</button>
   </section>
 
@@ -349,7 +350,8 @@ async function fillLoginNames() {
 
 const isBoss = r => r === "supervisor" || r === "admin";
 const isAdmin = () => store.get("session")?.role === "admin";
-const roleList = () => isAdmin() ? ["operator", "clerk", "supervisor", "admin"] : ["operator", "clerk", "supervisor"];
+const roleList = () => isAdmin() ? ["operator", "clerk", "supervisor", "viewer", "admin"] : ["operator", "clerk", "supervisor", "viewer"];
+const isWorker = r => r === "operator" || r === "clerk";
 let newRole = "operator", serverUsers = [];
 async function saveUser() {
   const name = $("uName").value.trim().replace(/\s+/g, " "), pin = $("uPin").value.trim();
@@ -397,7 +399,7 @@ async function renderUsers() {
         <button class="chip" onclick="toggleUser(${i})">${u.active ? "Deactivate" : "Activate"}</button>
       </div>
     </div>`; };
-  $("userList").innerHTML = ["admin", "supervisor", "clerk", "operator"].map(role => {
+  $("userList").innerHTML = ["admin", "supervisor", "clerk", "operator", "viewer"].map(role => {
     const list = serverUsers.filter(u => u.role === role);
     return `<div class="role-h">${role}s · ${list.filter(u => u.active).length} active</div>` +
       (list.length ? list.map(row).join("") : `<p class="muted" style="margin:4px 0">None yet.</p>`);
@@ -743,7 +745,7 @@ async function renderOrders() {
     if (u.ok) {
       serverUsers = u.users;
       const keep = $("oOperator").value;
-      const workers = u.users.filter(x => x.active && !isBoss(x.role));
+      const workers = u.users.filter(x => x.active && isWorker(x.role));
       $("oOperator").innerHTML = `<option value="">— pick an operator —</option>` +
         workers.map(x => `<option value="${esc(x.name)}">${esc(x.name)}${x.role === "clerk" ? " (clerk)" : ""}</option>`).join("");
       if (keep) $("oOperator").value = keep;
@@ -917,7 +919,7 @@ async function renderRecords(jobs) {
     try {
       const [c, u] = await Promise.all([api("customers"), api("listUsers")]);
       if (c.ok) recCustomers = c.customers;
-      if (u.ok) recPeople = u.users.filter(x => !isBoss(x.role)).map(x => x.name);
+      if (u.ok) recPeople = u.users.filter(x => isWorker(x.role)).map(x => x.name);
     } catch {}
   }
   const open = new Set([...document.querySelectorAll("#recList details[open]")].map(d => d.dataset.wo));
@@ -1156,6 +1158,11 @@ function route() {
   const s = store.get("session"), a = store.get("active");
   $("who").textContent = s ? s.name : "";
   if (!s) { fillLoginNames(); return show("login"); }
+  if (s.role === "viewer") {   // view-only accounts belong on the dashboard
+    localStorage.removeItem("session");
+    location.href = "dashboard/";
+    return;
+  }
   if (isBoss(s.role)) {
     show("super");
     document.querySelectorAll(".admin-only").forEach(b => b.classList.toggle("hidden", s.role !== "admin"));

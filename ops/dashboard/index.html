@@ -1,0 +1,375 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ZCL Ops Dashboard</title>
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#0f1720">
+<style>
+  /* Same dark yard look as the Ops app. Chart colours are the validated dark categorical slots. */
+  :root {
+    color-scheme: dark;
+    --bg: #0f1720; --card: #18232f; --line: #263544; --text: #eef3f7; --muted: #8fa3b5;
+    --brand: #f2a516; --go: #22b36b; --stop: #e5484d;
+    --s1: #338ced; --s2: #e76624; --s3: #00a888; --s4: #d28e05; --s5: #e24d8b; --s6: #0aac23;
+    --grid: rgba(143,163,181,.14);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; justify-content: space-between;
+    padding: 12px 16px; border-bottom: 1px solid var(--line); }
+  header .brand b { color: var(--brand); letter-spacing: .5px; } header .brand small { color: var(--muted); }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  main { max-width: 1280px; margin: 0 auto; padding: 16px; }
+  .chip, button, select, input { font: inherit; }
+  .chip { padding: 8px 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--card); color: var(--text); font-size: 14px; cursor: pointer; }
+  .chip.on { background: var(--brand); color: #111; border-color: var(--brand); font-weight: 600; }
+  input[type=date], select, input[type=password] { padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--card); color: var(--text); font-size: 14px; }
+  .muted { color: var(--muted); }
+  .status { font-size: 13px; margin: 0 0 12px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px; min-width: 0; }
+  .card h2 { font-size: 15px; margin: 0 0 2px; } .card .sub { font-size: 12px; color: var(--muted); margin: 0 0 10px; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 12px; }
+  .tile small { color: var(--muted); font-size: 12px; display: block; }
+  .tile b { font-size: 28px; font-variant-numeric: tabular-nums; display: block; margin-top: 4px; white-space: nowrap; }
+  .tile b em { font-style: normal; font-size: .5em; color: var(--muted); margin-left: 4px; font-weight: 600; }
+  .tile span { font-size: 12px; color: var(--muted); }
+  .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .wide { grid-column: 1 / -1; }
+  @media (max-width: 800px) { .grid { grid-template-columns: minmax(0, 1fr); } }
+  .chart { position: relative; height: 260px; }
+  .empty { display: grid; place-items: center; height: 100%; color: var(--muted); font-size: 14px; text-align: center; }
+  details.tbl { margin-top: 8px; font-size: 13px; } details.tbl summary { color: var(--muted); cursor: pointer; }
+  details.tbl table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+  details.tbl td, details.tbl th { padding: 4px 6px; border-bottom: 1px solid var(--line); text-align: left; }
+  details.tbl td:last-child, details.tbl th:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+  /* Task mix: one segmented bar (part-to-whole), 2px gaps between parts */
+  .seg { display: flex; gap: 2px; height: 34px; border-radius: 6px; overflow: hidden; margin: 6px 0 12px; }
+  .seg div { min-width: 2px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 8px 16px; font-size: 13px; }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+  .live-row { display: flex; justify-content: space-between; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+  .live-row:last-child { border-bottom: 0; }
+  .dot { color: var(--go); }
+  .login { max-width: 380px; margin: 40px auto; }
+  .login label { display: block; font-size: 13px; color: var(--muted); margin: 12px 0 6px; }
+  .login select, .login input { width: 100%; padding: 12px; font-size: 16px; }
+  .login button { width: 100%; margin-top: 16px; padding: 14px; border: 0; border-radius: 12px; background: var(--go); color: #fff; font-weight: 700; font-size: 16px; cursor: pointer; }
+  .err { color: var(--stop); font-size: 14px; min-height: 18px; margin-top: 8px; }
+  .hidden { display: none !important; }
+  /* TV mode: no controls, bigger numbers, today only */
+  body.tv .controls .hide-tv, body.tv details.tbl { display: none !important; }
+  body.tv .tile b { font-size: 40px; } body.tv .chart { height: 300px; }
+  body.tv main { max-width: none; }
+  #clock { font-variant-numeric: tabular-nums; font-weight: 600; }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand"><b>ZCL OPS</b> <small>Dashboard</small> <small id="who"></small></div>
+  <div class="controls">
+    <span id="clock" class="hidden"></span>
+    <span class="hide-tv" id="periodChips" style="display:flex;gap:6px"></span>
+    <input class="hide-tv" id="date" type="date" onchange="load()">
+    <button class="chip hide-tv" onclick="load()">↻</button>
+    <button class="chip" id="tvBtn" onclick="toggleTV()">📺 TV mode</button>
+    <a class="chip hide-tv" href="../" style="text-decoration:none">← App</a>
+    <button class="chip hide-tv" id="outBtn" onclick="signOut()">Sign out</button>
+  </div>
+</header>
+
+<main>
+  <!-- SIGN IN: supervisors, admins and viewer accounts -->
+  <section id="login" class="card login hidden">
+    <h2 style="font-size:18px">Dashboard sign in</h2>
+    <p class="muted" style="margin:4px 0 0;font-size:14px">Supervisor, admin or viewer account.</p>
+    <label>Name</label><select id="name"></select>
+    <label>PIN</label><input id="pin" type="password" inputmode="numeric" maxlength="6">
+    <div class="err" id="err"></div>
+    <button onclick="signIn()">Sign in</button>
+  </section>
+
+  <section id="dash" class="hidden">
+    <p class="status muted" id="status">Loading…</p>
+    <div class="tiles" id="tiles"></div>
+
+    <div class="grid">
+      <div class="card wide" id="liveCard">
+        <h2><span class="dot">●</span> Working now</h2>
+        <div id="live"></div>
+      </div>
+
+      <div class="card"><h2>Containers handled</h2><p class="sub" id="volSub"></p>
+        <div class="chart"><canvas id="cVolume"></canvas></div><div id="tVolume"></div></div>
+
+      <div class="card"><h2>Average minutes per container</h2><p class="sub" id="speedSub">Lower is faster</p>
+        <div class="chart"><canvas id="cSpeed"></canvas></div><div id="tSpeed"></div></div>
+
+      <div class="card wide"><h2>Task mix</h2><p class="sub">Share of containers by type of work</p>
+        <div id="mix"></div><div id="tMix"></div></div>
+
+      <div class="card"><h2>Operators — average minutes per container</h2><p class="sub">Fastest first · dashed line = team average</p>
+        <div class="chart" id="opWrap"><canvas id="cOps"></canvas></div><div id="tOps"></div></div>
+
+      <div class="card"><h2>Containers per customer</h2><p class="sub">Most active first</p>
+        <div class="chart" id="custWrap"><canvas id="cCust"></canvas></div><div id="tCust"></div></div>
+
+      <div class="card wide"><h2>Delay reasons</h2><p class="sub">Work orders with a delay reported</p>
+        <div class="chart" id="delayWrap" style="height:200px"><canvas id="cDelay"></canvas></div><div id="tDelay"></div></div>
+    </div>
+  </section>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+const API = "https://script.google.com/macros/s/AKfycbzJC8fX2mcOLFFerQx91rQtYTmrOpjK8UQ1bahy9DM33Egh1dVyQqUryFq9RN6BNEsjdg/exec";
+const KEY = "dashSession";   // separate from the Ops app's sign-in on the same device
+const $ = id => document.getElementById(id);
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const store = {
+  get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+  del(k) { try { localStorage.removeItem(k); } catch {} }
+};
+const esc = t => String(t ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const r1 = v => Math.round(v * 10) / 10;
+const avg = (l, f) => l.length ? l.reduce((t, x) => t + f(x), 0) / l.length : 0;
+const clock = t => new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+const fmt = ms => { const s = Math.floor(ms / 1000), h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60);
+  return h ? `${h}h ${String(m).padStart(2, "0")}m` : `${m} min`; };
+
+async function api(action, extra = {}, who = store.get(KEY)) {
+  const res = await fetch(API, { method: "POST", body: JSON.stringify({ action, name: who?.name, pin: who?.pin, ...extra }) });
+  return res.json();
+}
+
+/* ---------- Sign in ---------- */
+async function showLogin() {
+  $("login").classList.remove("hidden"); $("dash").classList.add("hidden"); $("outBtn").classList.add("hidden");
+  try {
+    const r = await (await fetch(API + "?action=names")).json();
+    $("name").innerHTML = `<option value="">— pick your name —</option>` + r.names.map(n => `<option>${esc(n)}</option>`).join("");
+  } catch { $("err").textContent = "No connection."; }
+}
+async function signIn() {
+  const who = { name: $("name").value, pin: $("pin").value };
+  if (!who.name || !who.pin) return $("err").textContent = "Pick your name and enter your PIN.";
+  $("err").textContent = "Checking…";
+  try {
+    const r = await api("login", {}, who);
+    if (!r.ok) return $("err").textContent = "Wrong PIN.";
+    if (!["supervisor", "admin", "viewer"].includes(r.role))
+      return $("err").textContent = "The dashboard is for supervisors, admins and viewer accounts.";
+    store.set(KEY, { ...who, role: r.role }); $("pin").value = ""; $("err").textContent = "";
+    start();
+  } catch { $("err").textContent = "No connection — try again."; }
+}
+function signOut() { store.del(KEY); location.reload(); }
+
+/* ---------- Period ---------- */
+let period = "Day";
+const dayKey = t => new Date(t).toLocaleDateString("en-CA");
+function range() {
+  const [y, m, d] = $("date").value.split("-").map(Number);
+  let from = new Date(y, m - 1, d), to;
+  if (period === "Week") { from.setDate(d - ((from.getDay() + 6) % 7)); to = new Date(from); to.setDate(from.getDate() + 7); }
+  else if (period === "Month") { from = new Date(y, m - 1, 1); to = new Date(y, m, 1); }
+  else { to = new Date(from); to.setDate(from.getDate() + 1); }
+  return [from.getTime(), to.getTime()];
+}
+function paintChips() {
+  $("periodChips").innerHTML = ["Day", "Week", "Month"].map(p =>
+    `<button class="chip ${p === period ? "on" : ""}" onclick="period='${p}';paintChips();load()">${p}</button>`).join("");
+}
+
+/* ---------- Charts (Chart.js) ---------- */
+const TASKS = ["Stripping", "Stuffing", "Loading", "Offloading", "Truck loading", "Other"];
+const TASK_COLOR = t => css("--s" + (TASKS.indexOf(t) >= 0 ? TASKS.indexOf(t) + 1 : 6));   // colour follows the task, never its rank
+const charts = {};
+function baseOptions(horizontal) {
+  const grid = { color: css("--grid") }, ticks = { color: css("--muted"), font: { size: 12 } };
+  return {
+    responsive: true, maintainAspectRatio: false, animation: { duration: 300 },
+    indexAxis: horizontal ? "y" : "x",
+    plugins: { legend: { display: false },
+      tooltip: { backgroundColor: "#0b1218", borderColor: css("--line"), borderWidth: 1, padding: 10, displayColors: false } },
+    scales: {
+      x: { grid: horizontal ? grid : { display: false }, ticks, border: { color: css("--line") }, beginAtZero: true },
+      y: { grid: horizontal ? { display: false } : grid, ticks, border: { display: false }, beginAtZero: true }
+    }
+  };
+}
+// Dashed "team average" line on the operators chart
+const refLine = {
+  id: "refLine",
+  afterDatasetsDraw(chart, _, o) {
+    if (!o || o.value == null) return;
+    const x = chart.scales.x.getPixelForValue(o.value), { top, bottom } = chart.chartArea, ctx = chart.ctx;
+    ctx.save(); ctx.strokeStyle = css("--text"); ctx.setLineDash([5, 4]); ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(x, top); ctx.lineTo(x, bottom); ctx.stroke();
+    ctx.setLineDash([]); ctx.fillStyle = css("--text"); ctx.font = "12px system-ui"; ctx.textAlign = "left";
+    ctx.fillText(`Team avg ${o.value} min`, Math.min(x + 6, chart.chartArea.right - 110), top + 12); ctx.restore();
+  }
+};
+function draw(id, type, labels, data, opts = {}) {
+  const canvas = $(id), wrap = canvas.parentElement;
+  wrap.querySelector(".empty")?.remove();
+  if (!labels.length) {
+    charts[id]?.destroy(); delete charts[id]; canvas.classList.add("hidden");
+    wrap.insertAdjacentHTML("beforeend", `<div class="empty">${opts.empty || "No data in this period."}</div>`);
+    return;
+  }
+  canvas.classList.remove("hidden");
+  const o = baseOptions(opts.horizontal);
+  if (opts.unit) o.plugins.tooltip.callbacks = { label: c => `${c.formattedValue} ${opts.unit}` };
+  if (opts.ref != null) o.plugins.refLine = { value: opts.ref };
+  if (opts.count) o.scales[opts.horizontal ? "x" : "y"].ticks.precision = 0;   // counts are whole numbers
+  const ds = type === "line"
+    ? { data, borderColor: opts.color, backgroundColor: opts.color, borderWidth: 2, pointRadius: 4, pointHoverRadius: 6, tension: .25, spanGaps: false }
+    : { data, backgroundColor: opts.colors || opts.color, borderRadius: 4, borderSkipped: "start", maxBarThickness: 34, categoryPercentage: .8 };
+  if (charts[id]) { charts[id].data.labels = labels; charts[id].data.datasets = [ds]; charts[id].options = o; charts[id].update(); return; }
+  charts[id] = new Chart(canvas, { type, data: { labels, datasets: [ds] }, options: o, plugins: [refLine] });
+}
+// Every chart has a table view with the same numbers
+function table(id, head, rows) {
+  $(id).innerHTML = rows.length ? `<details class="tbl"><summary>Show as table</summary><table>
+    <tr>${head.map(h => `<th>${h}</th>`).join("")}</tr>
+    ${rows.map(r => `<tr>${r.map(c => `<td>${esc(c)}</td>`).join("")}</tr>`).join("")}</table></details>` : "";
+}
+
+/* ---------- Load & render ---------- */
+let busy = false;
+async function load() {
+  if (busy) return; busy = true;
+  const [from, to] = range();
+  $("status").textContent = "Loading…";
+  try {
+    const r = await api("report", { from, to });
+    if (!r.ok) {
+      if (/PIN/.test(r.error)) return signOut();
+      $("status").textContent = "⚠ " + r.error; return;
+    }
+    render(r, from, to);
+    $("status").textContent = `${label(from, to)} · updated ${clock(Date.now())} · refreshes every minute`;
+  } catch { $("status").textContent = "⚠ No connection — showing the last data loaded."; }
+  finally { busy = false; }
+}
+function label(from, to) {
+  const o = { weekday: "short", day: "numeric", month: "short" };
+  return period === "Day" ? new Date(from).toLocaleDateString([], o)
+    : period === "Week" ? `${new Date(from).toLocaleDateString([], o)} – ${new Date(to - 1).toLocaleDateString([], o)}`
+    : new Date(from).toLocaleDateString([], { month: "long", year: "numeric" });
+}
+
+function render(r, from, to) {
+  const jobs = r.jobs;
+  const ctrs = jobs.flatMap(j => (j.containers || []).map(c => ({ ...c, operator: j.operator, task: c.task || j.task, customer: j.customer || "—" })));
+  const teamAvg = r1(avg(ctrs, c => c.minutes));
+  const hours = jobs.reduce((t, j) => t + j.minutes, 0) / 60;
+  const waits = jobs.filter(j => j.assignedAt && j.start >= j.assignedAt).map(j => (j.start - j.assignedAt) / 60000);
+  const delayed = jobs.filter(j => j.delay);
+
+  // Headline numbers
+  const tile = (name, value, note = "") => `<div class="card tile"><small>${name}</small><b>${value}</b><span>${note}</span></div>`;
+  $("tiles").innerHTML =
+    tile("Containers handled", ctrs.length) +
+    tile("Avg per container", ctrs.length ? teamAvg + "<em>min</em>" : "—") +
+    tile("Containers per hour", hours ? r1(ctrs.length / hours) : "—", "while on work orders") +
+    tile("Work orders", jobs.length) +
+    tile("Avg wait to start", waits.length ? Math.round(avg(waits, w => w)) + "<em>min</em>" : "—", "assigned → begun") +
+    tile("Delays", delayed.length, jobs.length ? Math.round(delayed.length / jobs.length * 100) + "% of work orders" : "") +
+    tile("Working now", r.live.length);
+
+  // Working now
+  $("live").innerHTML = r.live.length ? r.live.map(a => `<div class="live-row">
+      <div><b>${esc(a.operator)}</b> <span class="muted">· ${esc(a.customer || a.task)}</span><br>
+        <small class="muted">${(a.containers || []).length} done${a.current ? ` · on ${esc(a.current.no)} (${esc(a.current.task || "")}) since ${clock(a.current.start)}` : " · between containers"}</small></div>
+      <div style="text-align:right"><b>${fmt(Date.now() - a.start)}</b><br><small class="muted">on work order</small></div></div>`).join("")
+    : `<p class="muted" style="margin:6px 0 0">Nobody is on a work order right now.</p>`;
+
+  // Time buckets: hours for a day, days for a week or month
+  let buckets;
+  if (period === "Day") {
+    const hrs = ctrs.map(c => new Date(c.start).getHours());
+    const lo = Math.min(7, ...hrs), hi = Math.max(17, ...hrs);
+    buckets = Array.from({ length: hi - lo + 1 }, (_, i) => ({ key: lo + i, label: String(lo + i).padStart(2, "0") + ":00" }));
+  } else {
+    buckets = [];
+    for (let t = from; t < to; t += 86400000) buckets.push({ key: dayKey(t + 43200000),
+      label: new Date(t + 43200000).toLocaleDateString([], period === "Week" ? { weekday: "short", day: "numeric" } : { day: "numeric" }) });
+  }
+  const keyOf = c => period === "Day" ? new Date(c.start).getHours() : dayKey(c.start);
+  const per = buckets.map(b => ctrs.filter(c => keyOf(c) === b.key));
+  $("volSub").textContent = period === "Day" ? "Per hour" : "Per day";
+  $("speedSub").textContent = (period === "Day" ? "Per hour" : "Per day") + " · lower is faster";
+  draw("cVolume", "bar", ctrs.length ? buckets.map(b => b.label) : [], per.map(l => l.length), { color: css("--s1"), unit: "containers", count: true });
+  table("tVolume", [period === "Day" ? "Hour" : "Day", "Containers"], buckets.map((b, i) => [b.label, per[i].length]));
+  draw("cSpeed", "line", ctrs.length ? buckets.map(b => b.label) : [], per.map(l => l.length ? r1(avg(l, c => c.minutes)) : null), { color: css("--s1"), unit: "min" });
+  table("tSpeed", [period === "Day" ? "Hour" : "Day", "Avg min"], buckets.map((b, i) => [b.label, per[i].length ? r1(avg(per[i], c => c.minutes)) : "—"]));
+
+  // Task mix — one segmented bar, colour per task, legend with counts and %
+  const mix = TASKS.map(t => ({ t, n: ctrs.filter(c => c.task === t).length })).filter(x => x.n);
+  const other = ctrs.filter(c => !TASKS.includes(c.task)).length;
+  if (other) { const o = mix.find(x => x.t === "Other"); o ? o.n += other : mix.push({ t: "Other", n: other }); }
+  $("mix").innerHTML = ctrs.length ? `<div class="seg">${mix.map(x => `<div title="${x.t}: ${x.n}" style="flex:${x.n};background:${TASK_COLOR(x.t)}"></div>`).join("")}</div>
+    <div class="legend">${mix.map(x => `<span><i style="background:${TASK_COLOR(x.t)}"></i>${x.t} <b>${x.n}</b> <span class="muted">(${Math.round(x.n / ctrs.length * 100)}%)</span></span>`).join("")}</div>`
+    : `<p class="muted">No data in this period.</p>`;
+  table("tMix", ["Task", "Containers"], mix.map(x => [x.t, x.n]));
+
+  // Operators — fastest first, with the team average as a reference line
+  const ops = Object.entries(ctrs.reduce((g, c) => ((g[c.operator] ||= []).push(c), g), {}))
+    .map(([name, l]) => ({ name, n: l.length, a: r1(avg(l, c => c.minutes)) })).sort((a, b) => a.a - b.a);
+  $("opWrap").style.height = Math.max(200, ops.length * 38 + 60) + "px";
+  draw("cOps", "bar", ops.map(o => `${o.name} (${o.n})`), ops.map(o => o.a), { horizontal: true, color: css("--s1"), unit: "min", ref: ops.length ? teamAvg : null });
+  table("tOps", ["Operator", "Containers", "Avg min"], ops.map(o => [o.name, o.n, o.a]));
+
+  // Customers — top 7, the rest folded into "Other"
+  let cust = Object.entries(ctrs.reduce((g, c) => (g[c.customer] = (g[c.customer] || 0) + 1, g), {})).sort((a, b) => b[1] - a[1]);
+  if (cust.length > 8) cust = [...cust.slice(0, 7), ["Other customers", cust.slice(7).reduce((t, x) => t + x[1], 0)]];
+  $("custWrap").style.height = Math.max(200, cust.length * 38 + 60) + "px";
+  draw("cCust", "bar", cust.map(x => x[0]), cust.map(x => x[1]), { horizontal: true, color: css("--s1"), unit: "containers", count: true });
+  table("tCust", ["Customer", "Containers"], cust);
+
+  // Delay reasons
+  const dlCount = new Set(delayed.map(j => j.delay)).size;
+  $("delayWrap").style.height = Math.max(140, dlCount * 38 + 60) + "px";
+  const dl = Object.entries(delayed.reduce((g, j) => (g[j.delay] = (g[j.delay] || 0) + 1, g), {})).sort((a, b) => b[1] - a[1]);
+  draw("cDelay", "bar", dl.map(x => x[0]), dl.map(x => x[1]), { horizontal: true, color: css("--s1"), unit: "work orders", count: true,
+    empty: jobs.length ? "✓ No delays reported in this period." : "No data in this period." });
+  table("tDelay", ["Reason", "Work orders"], dl);
+}
+
+/* ---------- TV mode ---------- */
+function toggleTV(on = !document.body.classList.contains("tv")) {
+  document.body.classList.toggle("tv", on);
+  $("clock").classList.toggle("hidden", !on);
+  $("tvBtn").textContent = on ? "✕ Exit TV" : "📺 TV mode";
+  if (on) {
+    period = "Day"; $("date").value = dayKey(Date.now()); paintChips(); load();
+    document.documentElement.requestFullscreen?.().catch(() => {});
+  } else if (document.fullscreenElement) document.exitFullscreen?.();
+}
+setInterval(() => {
+  $("clock").textContent = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  // on a wall screen, roll over to the new day by itself
+  if (document.body.classList.contains("tv") && $("date").value !== dayKey(Date.now())) { $("date").value = dayKey(Date.now()); load(); }
+}, 1000);
+
+/* ---------- Start ---------- */
+function start() {
+  const s = store.get(KEY);
+  if (!s) return showLogin();
+  $("who").textContent = "· " + s.name; $("outBtn").classList.remove("hidden");
+  $("login").classList.add("hidden"); $("dash").classList.remove("hidden");
+  if (!$("date").value) $("date").value = dayKey(Date.now());
+  paintChips(); load();
+  if (new URLSearchParams(location.search).has("tv")) toggleTV(true);
+}
+Chart.defaults.font.family = "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
+start();
+setInterval(() => { if (store.get(KEY) && !document.hidden) load(); }, 60000);
+</script>
+</body>
+</html>
