@@ -95,6 +95,8 @@
           <h2>Transporters</h2>
           <div class="row">
             <button class="chip" onclick="exportExcel()">⬇ Excel</button>
+            <button class="chip edit-only" onclick="$('impFile').click()">⬆ Import Excel</button>
+            <input type="file" id="impFile" accept=".xlsx,.xls,.csv" class="hidden" onchange="readImport(this.files[0]);this.value=''">
             <button class="btn edit-only" onclick="openT(null)">+ New transporter</button>
           </div>
         </div>
@@ -104,6 +106,19 @@
         </div>
         <label>Status</label><div class="chips" id="fStatus"></div>
         <div id="list" style="margin-top:8px"></div>
+      </div>
+    </div>
+
+    <!-- IMPORT PREVIEW -->
+    <div id="vImport" class="hidden card">
+      <h2>Import from Excel</h2>
+      <p class="muted small" id="impFileName" style="margin:0 0 10px"></p>
+      <div id="impSummary"></div>
+      <div class="err" id="impErr"></div>
+      <div class="row" style="margin-top:12px">
+        <button class="btn" id="impGo" onclick="confirmImport()">Confirm import</button>
+        <button class="btn ghost" onclick="setView('list')">Cancel</button>
+        <button class="chip" onclick="downloadTemplate()">⬇ Template</button>
       </div>
     </div>
 
@@ -314,7 +329,8 @@ function render() {
   if (s.role === "admin") tabs.push(["team", "👥 Team"]);
   const active = view === "detail" ? "list" : view;
   $("tabs").innerHTML = tabs.map(([k, l]) => `<button class="chip ${k === active ? "on" : ""}" onclick="setView('${k}')">${l}</button>`).join("");
-  ["vList", "vDetail", "vExpiring", "vTeam"].forEach(id => $(id).classList.add("hidden"));
+  ["vList", "vDetail", "vExpiring", "vTeam", "vImport"].forEach(id => $(id).classList.add("hidden"));
+  if (view === "import") $("vImport").classList.remove("hidden");
   if (view === "list") { $("vList").classList.remove("hidden"); renderList(); }
   if (view === "detail") { $("vDetail").classList.remove("hidden"); renderDetail(); }
   if (view === "expiring") { $("vExpiring").classList.remove("hidden"); renderExpiring(); }
@@ -524,6 +540,131 @@ async function exportExcel() {
   add("Trucks", K, [28, 13, 13, 12, 12, 20, 16, 8]);
   add("Documents", Dc, [28, 18, 28, 16, 12, 24]);
   XLSX.writeFile(wb, `ZCL-Transporters_${isoDate(Date.now())}.xlsx`, { cellDates: true });
+}
+
+/* ----- Import from Excel: match columns by their headings, preview, then confirm ----- */
+// Heading → field. Headings are compared lower-case with spaces and punctuation removed.
+const COLS = {
+  Company: ["company", "companyname", "transporter", "transportername", "transportcompany", "name", "haulier", "carrier"],
+  "Registration / TIN": ["registrationtin", "registration", "tin", "tinno", "tinnumber", "regno", "companyregistration", "brela"],
+  Country: ["country"], Corridors: ["corridors", "corridor", "routes", "route"],
+  "Contact person": ["contactperson", "contact", "contactname", "person"],
+  Phone: ["phone", "phoneno", "phonenumber", "tel", "telephone", "mobile", "cell", "contactphone"],
+  Email: ["email", "emailaddress", "mail"], Status: ["status"], Notes: ["notes", "remarks", "comments", "comment"],
+  "Horse plate": ["horseplate", "horse", "plate", "plateno", "truckplate", "truckreg", "truckregistration", "truckno", "vehicleregno", "vehicle"],
+  "Trailer plate": ["trailerplate", "trailer", "trailerno", "trailerreg"],
+  "Truck type": ["trucktype", "vehicletype", "trailertype", "bodytype"],
+  "Capacity (t)": ["capacityt", "capacity", "tonnage", "tonnes", "tons", "payload"],
+  Driver: ["driver", "drivername"], "Driver phone": ["driverphone", "drivermobile", "drivertel", "driverno"],
+  DocType: ["documenttype", "doctype", "document"], Number: ["number", "documentnumber", "docno", "documentno", "policyno", "certificateno"],
+  Expiry: ["expiry", "expirydate", "expires", "validto", "validuntil", "expiringon", "dateofexpiry"],
+  AppliesTo: ["appliesto"], Active: ["active"]
+};
+const norm = h => String(h).toLowerCase().replace(/[^a-z0-9]/g, "");
+// Dates are pinned to midday so a time-zone difference can never move them to the day before
+function parseDate(v) {
+  const noon = (y, m, d) => { const t = new Date(y, m, d, 12); return isNaN(t) ? null : t.getTime(); };
+  if (v instanceof Date && !isNaN(v)) return noon(v.getFullYear(), v.getMonth(), v.getDate());
+  const s = String(v ?? "").trim(); if (!s) return null;
+  let m = s.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2,4})$/);   // dd/mm/yyyy (East African style)
+  if (m) return noon(+m[3] < 100 ? 2000 + +m[3] : +m[3], +m[2] - 1, +m[1]);
+  m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);                              // yyyy-mm-dd
+  if (m) return noon(+m[1], +m[2] - 1, +m[3]);
+  const d = new Date(s); return isNaN(d) ? null : noon(d.getFullYear(), d.getMonth(), d.getDate());
+}
+const COMPANY_DOCS = ["business licence", "goods-in-transit insurance", "tax clearance"];
+function fixCorridors(v) {
+  const s = String(v ?? "").toLowerCase(), out = [];
+  if (/dar/.test(s)) out.push(CORRIDORS[0]);
+  if (/walvis/.test(s)) out.push(CORRIDORS[1]);
+  return out.length ? out.join("; ") : String(v ?? "").trim();
+}
+let impData = null, impName = "";
+async function readImport(file) {
+  if (!file) return;
+  try { await loadXLSX(); } catch { return toast("Couldn't load the Excel tool."); }
+  let wb;
+  try { wb = XLSX.read(await file.arrayBuffer(), { cellDates: true }); } catch { return toast("That file couldn't be read. Is it an Excel or CSV file?"); }
+  const out = { transporters: [], trucks: [], docs: [] }; let rowsSeen = 0, noCompany = 0;
+  const unknownHeads = new Set();
+  wb.SheetNames.forEach(sn => {
+    const sheet = sn.toLowerCase(), isTruck = /truck|fleet|vehicle/.test(sheet), isDoc = /doc|licen|insur|permit/.test(sheet);
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[sn], { defval: "", raw: true });
+    rows.forEach(r => {
+      const f = {};
+      Object.keys(r).forEach(h => {
+        const k = norm(h);
+        let field = Object.keys(COLS).find(F => COLS[F].includes(k));
+        if (!field && k === "type") field = isTruck ? "Truck type" : "DocType";   // "Type" means truck type on a trucks sheet
+        if (field) { if (f[field] === undefined || f[field] === "") f[field] = r[h]; } else unknownHeads.add(String(h).trim());
+      });
+      const values = Object.values(f).filter(v => String(v).trim() !== "");
+      if (!values.length) return;
+      rowsSeen++;
+      const company = String(f.Company ?? "").trim();
+      if (!company) { noCompany++; return; }
+      // Company details only from a general/transporters sheet (a docs sheet's "Status" is the document's status)
+      if (!isTruck && !isDoc) out.transporters.push({ Company: company, "Registration / TIN": f["Registration / TIN"], Country: f.Country,
+        Corridors: fixCorridors(f.Corridors), "Contact person": f["Contact person"], Phone: String(f.Phone ?? ""), Email: f.Email, Status: f.Status, Notes: f.Notes });
+      if (!isDoc && String(f["Horse plate"] ?? "").trim()) out.trucks.push({ Company: company, "Horse plate": f["Horse plate"], "Trailer plate": f["Trailer plate"],
+        "Truck type": f["Truck type"], "Capacity (t)": f["Capacity (t)"], Driver: f.Driver, "Driver phone": String(f["Driver phone"] ?? ""),
+        Active: /^(no|false|0)$/i.test(String(f.Active ?? "").trim()) ? false : undefined });
+      if (String(f.DocType ?? "").trim()) {
+        const plate = String(f.AppliesTo ?? "").replace(/^truck\s*/i, "").trim();
+        const type = String(f.DocType).trim(), companyDoc = COMPANY_DOCS.includes(type.toLowerCase());
+        out.docs.push({ Company: company, Type: type, Number: String(f.Number ?? ""), Expiry: parseDate(f.Expiry),
+          // "Applies to" wins; otherwise a truck-type document on a truck's row belongs to that truck
+          Plate: /^company$/i.test(plate) ? "" : (plate || (isDoc || companyDoc ? "" : String(f["Horse plate"] ?? ""))) });
+      }
+    });
+  });
+  impData = out; impName = file.name;
+  // Preview against what's already in the register
+  const key = v => String(v ?? "").trim().toLowerCase(), pk = v => String(v ?? "").toUpperCase().replace(/\s/g, "");
+  const names = [...new Set([...out.transporters, ...out.trucks, ...out.docs].map(x => key(x.Company)))];
+  const existing = names.filter(n => D.transporters.some(t => key(t.Company) === n)).length;
+  const plates = [...new Set(out.trucks.map(k => pk(k["Horse plate"])))];
+  const knownPlates = plates.filter(p => D.trucks.some(k => pk(k["Horse plate"]) === p)).length;
+  const badDates = out.docs.filter(d => !d.Expiry).length;
+  $("impFileName").textContent = `${file.name} · ${wb.SheetNames.length} sheet${wb.SheetNames.length > 1 ? "s" : ""} · ${rowsSeen} rows with data`;
+  const line = (b, t) => `<div class="line"><span>${t}</span><b>${b}</b></div>`;
+  $("impSummary").innerHTML =
+    line(names.length - existing, "New transporters") + line(existing, "Existing transporters (blank cells won't overwrite)") +
+    line(plates.length - knownPlates, "New trucks") + line(knownPlates, "Trucks already registered (will be updated)") +
+    line(out.docs.length - badDates, "Documents") +
+    (noCompany ? line(noCompany, "<span style='color:var(--warn)'>Rows skipped — no company name</span>") : "") +
+    (badDates ? line(badDates, "<span style='color:var(--warn)'>Documents without a readable expiry date (will be skipped)</span>") : "") +
+    (unknownHeads.size ? `<p class="muted small">Columns not used: ${[...unknownHeads].slice(0, 12).map(esc).join(", ")}${unknownHeads.size > 12 ? "…" : ""}</p>` : "");
+  const nothing = !names.length;
+  $("impErr").textContent = nothing ? "No transporters found. Make sure there's a column called Company (or Transporter / Name). Download the template to see the layout." : "";
+  $("impGo").classList.toggle("hidden", nothing);
+  setView("import");
+}
+async function confirmImport() {
+  if (!impData) return;
+  $("impGo").disabled = true; $("impErr").textContent = "Importing…";
+  try {
+    const r = await api("import", { data: impData, file: impName });
+    if (!r.ok) { $("impErr").textContent = r.error; return; }
+    const c = r.counts;
+    toast(`Imported: ${c.tNew} new and ${c.tUpd} updated transporters, ${c.kNew + c.kUpd} trucks, ${c.dNew + c.dUpd} documents.`);
+    if (r.warnings.length) {
+      $("impSummary").innerHTML = `<p><b>Done.</b> A few rows need a look:</p>` + r.warnings.map(w => `<div class="line small">⚠ ${esc(w)}</div>`).join("");
+      $("impErr").textContent = ""; $("impGo").classList.add("hidden"); impData = null; await load(); view = "import"; render(); return;
+    }
+    impData = null; await load(); setView("list");
+  } catch { $("impErr").textContent = "No connection — nothing was imported."; }
+  finally { $("impGo").disabled = false; }
+}
+async function downloadTemplate() {
+  try { await loadXLSX(); } catch { return toast("Couldn't load the Excel tool."); }
+  const wb = XLSX.utils.book_new(), add = (n, rows) => XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), n);
+  add("Transporters", [{ Company: "Example Haulage Ltd", "Registration / TIN": "123-456-789", Country: "Tanzania", Corridors: "Dar es Salaam ⇄ Zambia",
+    "Contact person": "Jane Doe", Phone: "+255 700 000 000", Email: "ops@example.co.tz", Status: "Approved", Notes: "" }]);
+  add("Trucks", [{ Transporter: "Example Haulage Ltd", "Horse plate": "T 123 ABC", "Trailer plate": "T 456 DEF", Type: "Flatbed", "Capacity (t)": 34, Driver: "John Doe", "Driver phone": "+255 711 000 000" }]);
+  add("Documents", [{ Transporter: "Example Haulage Ltd", "Applies to": "Company", Type: "Goods-in-transit insurance", Number: "GIT-0001", Expiry: "31/12/2027" },
+    { Transporter: "Example Haulage Ltd", "Applies to": "Truck T 123 ABC", Type: "COMESA yellow card", Number: "YC-0001", Expiry: "30/06/2027" }]);
+  XLSX.writeFile(wb, "ZCL-Transporters-import-template.xlsx");
 }
 
 /* ---------- Start ---------- */
