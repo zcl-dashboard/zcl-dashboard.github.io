@@ -1,0 +1,541 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ZCL Transporters</title>
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#0f1720">
+<style>
+  /* Same dark look as the Ops app */
+  :root {
+    color-scheme: dark;
+    --bg: #0f1720; --card: #18232f; --line: #263544; --text: #eef3f7; --muted: #8fa3b5;
+    --brand: #f2a516; --go: #22b36b; --warn: #e0a106; --stop: #e5484d; --info: #3b82f6;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+  header b { color: var(--brand); letter-spacing: .5px; } header small { color: var(--muted); }
+  main { max-width: 1000px; margin: 0 auto; padding: 16px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px; margin-bottom: 14px; }
+  label { display: block; font-size: 13px; color: var(--muted); margin: 12px 0 6px; }
+  input, select, textarea { width: 100%; padding: 12px; font: inherit; font-size: 16px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--text); }
+  input:focus, select:focus, textarea:focus { outline: 2px solid var(--brand); border-color: transparent; }
+  input:disabled, select:disabled, textarea:disabled { opacity: .75; }
+  .chip { padding: 8px 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--card); color: var(--text); font: inherit; font-size: 14px; cursor: pointer; }
+  .chip.on { background: var(--brand); color: #111; border-color: var(--brand); font-weight: 600; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .btn { padding: 12px 18px; border: 0; border-radius: 12px; font: inherit; font-weight: 700; cursor: pointer; color: #fff; background: var(--go); }
+  .btn.ghost { background: transparent; border: 1px solid var(--line); color: var(--muted); font-weight: 500; }
+  .btn.danger { background: transparent; border: 1px solid var(--stop); color: var(--stop); font-weight: 500; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 14px; }
+  .grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 14px; }
+  @media (max-width: 640px) { .grid2, .grid3 { grid-template-columns: minmax(0, 1fr); } }
+  .tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 14px; }
+  .tile small { color: var(--muted); font-size: 12px; } .tile b { display: block; font-size: 28px; margin-top: 4px; font-variant-numeric: tabular-nums; }
+  .item { display: flex; justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); cursor: pointer; }
+  .item:last-child { border-bottom: 0; } .item:hover b { color: var(--brand); }
+  .muted { color: var(--muted); } .small { font-size: 13px; }
+  .pill { display: inline-block; font-size: 12px; padding: 3px 9px; border-radius: 999px; white-space: nowrap; border: 1px solid currentColor; }
+  .s-Approved, .d-ok { color: var(--go); } .s-Pending { color: #8cc4ff; } .s-Suspended, .d-soon { color: var(--warn); }
+  .s-Blacklisted, .d-exp { color: var(--stop); } .d-none { color: var(--muted); }
+  .err { color: var(--stop); font-size: 14px; min-height: 18px; margin-top: 8px; }
+  .hidden { display: none !important; }
+  .sub { background: var(--bg); border-radius: 10px; padding: 12px; margin-top: 10px; }
+  .line { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+  .line:last-child { border-bottom: 0; }
+  #toast { position: fixed; left: 16px; right: 16px; bottom: 20px; max-width: 460px; margin: 0 auto; background: #2a3a4a; padding: 14px 16px;
+    border-radius: 12px; text-align: center; font-size: 15px; box-shadow: 0 6px 20px rgba(0,0,0,.4); z-index: 9; }
+  .login { max-width: 400px; margin: 40px auto; }
+  h2 { font-size: 18px; margin: 0 0 4px; } h3 { font-size: 15px; margin: 0; }
+</style>
+</head>
+<body>
+<header>
+  <div><b>ZCL</b> <small>Transporters</small> <small id="who"></small></div>
+  <div class="row hidden" id="topBtns">
+    <button class="chip" onclick="showPinChange(true)">Change PIN</button>
+    <button class="chip" onclick="signOut()">Sign out</button>
+  </div>
+</header>
+
+<main>
+  <!-- SIGN IN -->
+  <section id="login" class="card login hidden">
+    <h2>Sign in</h2>
+    <label>Name</label><select id="lName"></select>
+    <label>PIN</label><input id="lPin" type="password" inputmode="numeric" maxlength="6">
+    <div class="err" id="lErr"></div>
+    <button class="btn" style="width:100%;margin-top:12px" onclick="signIn()">Sign in</button>
+  </section>
+
+  <!-- CHOOSE / CHANGE PIN -->
+  <section id="pinBox" class="card login hidden">
+    <h2>Choose your PIN</h2>
+    <p class="muted small" id="pinWhy">Pick a 4–6 digit PIN only you know.</p>
+    <label>New PIN</label><input id="p1" type="password" inputmode="numeric" maxlength="6">
+    <label>Type it again</label><input id="p2" type="password" inputmode="numeric" maxlength="6">
+    <div class="err" id="pErr"></div>
+    <div class="row" style="margin-top:12px"><button class="btn" onclick="savePin()">Save PIN</button>
+      <button class="btn ghost" id="pinCancel" onclick="showPinChange(false)">Cancel</button></div>
+  </section>
+
+  <!-- APP -->
+  <section id="app" class="hidden">
+    <nav class="tabs" id="tabs"></nav>
+
+    <!-- LIST -->
+    <div id="vList">
+      <div class="tiles" id="tiles"></div>
+      <div class="card">
+        <div class="row" style="justify-content:space-between">
+          <h2>Transporters</h2>
+          <div class="row">
+            <button class="chip" onclick="exportExcel()">⬇ Excel</button>
+            <button class="btn edit-only" onclick="openT(null)">+ New transporter</button>
+          </div>
+        </div>
+        <div class="grid2" style="margin-top:6px">
+          <div><label>Search</label><input id="q" placeholder="Company, plate, contact, phone…" oninput="renderList()"></div>
+          <div><label>Corridor</label><select id="fCor" onchange="renderList()"></select></div>
+        </div>
+        <label>Status</label><div class="chips" id="fStatus"></div>
+        <div id="list" style="margin-top:8px"></div>
+      </div>
+    </div>
+
+    <!-- DETAIL -->
+    <div id="vDetail" class="hidden">
+      <button class="chip" onclick="setView('list')" style="margin-bottom:12px">← All transporters</button>
+      <div class="card">
+        <div class="row" style="justify-content:space-between"><h2 id="dTitle"></h2><span id="dStatus"></span></div>
+        <div class="grid2">
+          <div><label>Company name *</label><input id="tCompany"></div>
+          <div><label>Registration / TIN</label><input id="tReg"></div>
+          <div><label>Country</label><select id="tCountry"></select></div>
+          <div><label>Status</label><select id="tStatus"></select></div>
+          <div><label>Contact person</label><input id="tContact"></div>
+          <div><label>Phone</label><input id="tPhone" inputmode="tel"></div>
+          <div><label>Email</label><input id="tEmail" inputmode="email"></div>
+          <div><label>Corridors served</label><div class="chips" id="tCor"></div></div>
+        </div>
+        <label>Notes</label><textarea id="tNotes" rows="2"></textarea>
+        <div class="err" id="tErr"></div>
+        <button class="btn edit-only" onclick="saveT()">Save transporter</button>
+      </div>
+
+      <div id="dMore">
+        <div class="card">
+          <h3>Trucks <span class="muted small" id="kCount"></span></h3>
+          <div id="kList"></div>
+          <div class="sub edit-only">
+            <b id="kFormTitle">Add a truck</b>
+            <div class="grid3">
+              <div><label>Horse plate *</label><input id="kHorse" autocapitalize="characters"></div>
+              <div><label>Trailer plate</label><input id="kTrailer" autocapitalize="characters"></div>
+              <div><label>Truck type</label><select id="kType"></select></div>
+              <div><label>Capacity (tonnes)</label><input id="kCap" inputmode="decimal"></div>
+              <div><label>Driver</label><input id="kDriver"></div>
+              <div><label>Driver phone</label><input id="kDPhone" inputmode="tel"></div>
+            </div>
+            <div class="err" id="kErr"></div>
+            <div class="row"><button class="btn" onclick="saveK()">Save truck</button>
+              <button class="btn ghost" onclick="resetK()">Clear</button></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Documents <span class="muted small">· amber = expires within 30 days, red = expired</span></h3>
+          <div id="dList"></div>
+          <div class="sub edit-only">
+            <b id="dFormTitle">Add a document</b>
+            <div class="grid2">
+              <div><label>Type *</label><select id="dType"></select></div>
+              <div><label>Applies to</label><select id="dFor"></select></div>
+              <div><label>Document number</label><input id="dNum"></div>
+              <div><label>Expiry date *</label><input id="dExp" type="date"></div>
+            </div>
+            <div class="err" id="dErr"></div>
+            <div class="row"><button class="btn" onclick="saveD()">Save document</button>
+              <button class="btn ghost" onclick="resetD()">Clear</button></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- EXPIRING -->
+    <div id="vExpiring" class="hidden card">
+      <h2>Documents expiring or expired</h2>
+      <p class="muted small" style="margin:0 0 8px">Expired first, then those expiring within 30 days. Tap one to open the transporter.</p>
+      <div id="expList"></div>
+    </div>
+
+    <!-- TEAM (admin) -->
+    <div id="vTeam" class="hidden">
+      <div class="card">
+        <h2>Add or change an account</h2>
+        <p class="muted small" style="margin:0">They'll be asked to choose their own PIN at first sign-in.</p>
+        <div class="grid2">
+          <div><label>Full name</label><input id="uName"></div>
+          <div><label>Temporary PIN (4–6 digits)</label><input id="uPin" inputmode="numeric" maxlength="6"></div>
+        </div>
+        <label>Role</label><div class="chips" id="uRole"></div>
+        <p class="muted small" id="roleHelp"></p>
+        <div class="err" id="uErr"></div>
+        <button class="btn" onclick="saveUser()">Save account</button>
+      </div>
+      <div class="card"><div id="uList"></div></div>
+    </div>
+  </section>
+</main>
+<div id="toast" class="hidden"></div>
+
+<script>
+// Set once the Transporters script is deployed (Deploy → Web app URL ending in /exec)
+const API = "";
+
+const COUNTRIES = ["Tanzania", "Zambia", "Namibia", "DR Congo", "Malawi", "Zimbabwe", "South Africa", "Other"];
+const CORRIDORS = ["Dar es Salaam ⇄ Zambia", "Walvis Bay ⇄ Zambia"];
+const STATUSES = ["Approved", "Pending", "Suspended", "Blacklisted"];
+const TRUCK_TYPES = ["Flatbed", "Skeletal", "Side-tipper", "Tautliner", "Tanker", "Lowbed", "Box body", "Other"];
+const DOC_TYPES = ["Business licence", "Goods-in-transit insurance", "Vehicle insurance", "COMESA yellow card", "Road permit",
+  "Vehicle fitness certificate", "Tax clearance", "Driver's licence", "Other"];
+const ROLE_HELP = { dispatch: "Dispatch — add and edit transporters, trucks and documents.",
+  procurement: "Procurement — add and edit transporters, trucks and documents.",
+  management: "Management — view only.", admin: "Admin — everything, plus creates accounts." };
+
+const $ = id => document.getElementById(id);
+const store = {
+  get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+  del(k) { try { localStorage.removeItem(k); } catch {} }
+};
+const KEY = "trSession";
+const esc = t => String(t ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const opts = (list, cur, blank) => (blank ? `<option value="">${blank}</option>` : "") +
+  list.map(v => `<option ${v === cur ? "selected" : ""}>${esc(v)}</option>`).join("");
+const dateStr = ms => ms ? new Date(ms).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "—";
+const isoDate = ms => ms ? new Date(ms - new Date(ms).getTimezoneOffset() * 60000).toISOString().slice(0, 10) : "";
+let toastT;
+function toast(m) { $("toast").textContent = m; $("toast").classList.remove("hidden"); clearTimeout(toastT); toastT = setTimeout(() => $("toast").classList.add("hidden"), 3500); }
+let armed = null;
+function armOrConfirm(btn, label) {   // two taps for anything destructive
+  if (armed === btn) { armed = null; return true; }
+  armed = btn; const orig = btn.textContent; btn.textContent = label;
+  setTimeout(() => { if (armed === btn) armed = null; btn.textContent = orig; }, 4000);
+  return false;
+}
+async function api(action, extra = {}, who = store.get(KEY)) {
+  if (!API) throw new Error("not connected");
+  const res = await fetch(API, { method: "POST", body: JSON.stringify({ action, name: who?.name, pin: who?.pin, ...extra }) });
+  return res.json();
+}
+
+/* ---------- Sign in & PIN ---------- */
+function show(id) { ["login", "pinBox", "app"].forEach(s => $(s).classList.toggle("hidden", s !== id)); }
+async function showLogin() {
+  show("login"); $("topBtns").classList.add("hidden"); $("who").textContent = "";
+  if (!API) return $("lErr").textContent = "Not connected to the Transporters Sheet yet.";
+  try {
+    const r = await (await fetch(API + "?action=names")).json();
+    $("lName").innerHTML = opts(r.names, "", "— pick your name —");
+  } catch { $("lErr").textContent = "No connection."; }
+}
+async function signIn() {
+  const who = { name: $("lName").value, pin: $("lPin").value };
+  if (!who.name || !who.pin) return $("lErr").textContent = "Pick your name and enter your PIN.";
+  $("lErr").textContent = "Checking…";
+  try {
+    const r = await api("login", {}, who);
+    if (!r.ok) return $("lErr").textContent = "Wrong PIN.";
+    store.set(KEY, { ...who, role: r.role }); $("lPin").value = ""; $("lErr").textContent = "";
+    if (r.mustChange) return showPinChange(true, true);
+    start();
+  } catch { $("lErr").textContent = "No connection — try again."; }
+}
+function signOut() { store.del(KEY); location.reload(); }
+let pinForced = false;
+function showPinChange(on, forced = false) {
+  pinForced = forced;
+  if (!on) return start();
+  show("pinBox"); $("p1").value = $("p2").value = ""; $("pErr").textContent = "";
+  $("pinCancel").classList.toggle("hidden", forced);
+  $("pinWhy").textContent = forced ? "You're using a temporary PIN. Choose your own 4–6 digit PIN to continue." : "Pick a new 4–6 digit PIN.";
+}
+async function savePin() {
+  const a = $("p1").value, b = $("p2").value;
+  if (!/^\d{4,6}$/.test(a)) return $("pErr").textContent = "PIN must be 4–6 digits.";
+  if (a !== b) return $("pErr").textContent = "The two PINs don't match.";
+  try {
+    const r = await api("changePin", { newPin: a });
+    if (!r.ok) return $("pErr").textContent = r.error;
+    store.set(KEY, { ...store.get(KEY), pin: a }); toast("PIN saved."); start();
+  } catch { $("pErr").textContent = "No connection — try again."; }
+}
+
+/* ---------- Data ---------- */
+let D = { transporters: [], trucks: [], docs: [] }, view = "list", curId = null, statusF = "All";
+const role = () => store.get(KEY)?.role;
+const canEdit = () => ["dispatch", "procurement", "admin"].includes(role());
+async function load(silent) {
+  try {
+    const r = await api("data");
+    if (!r.ok) { if (/PIN/.test(r.error)) return signOut(); return toast(r.error); }
+    D = r; render();
+  } catch { if (!silent) toast("No connection — showing the last data loaded."); }
+}
+
+// Document status: expired / within 30 days / valid
+function docState(d) {
+  const days = Math.floor((d.Expiry - new Date().setHours(0, 0, 0, 0)) / 86400000);
+  if (days < 0) return { k: "exp", rank: 0, days, label: `Expired ${-days} day${days === -1 ? "" : "s"} ago` };
+  if (days <= 30) return { k: "soon", rank: 1, days, label: days === 0 ? "Expires today" : `Expires in ${days} day${days === 1 ? "" : "s"}` };
+  return { k: "ok", rank: 2, days, label: "Valid to " + dateStr(d.Expiry) };
+}
+const docsOf = id => D.docs.filter(d => d["Transporter ID"] === id);
+const trucksOf = id => D.trucks.filter(k => k["Transporter ID"] === id);
+const tById = id => D.transporters.find(t => t.ID === id);
+const plateOf = kid => D.trucks.find(k => k.ID === kid)?.["Horse plate"] || "";
+function worstDoc(id) {
+  const st = docsOf(id).map(docState).sort((a, b) => a.rank - b.rank)[0];
+  return st ? (st.k === "ok" ? `<span class="pill d-ok">Docs valid</span>` : `<span class="pill d-${st.k}">${st.k === "exp" ? "Doc expired" : "Doc expiring"}</span>`)
+            : `<span class="pill d-none">No documents</span>`;
+}
+
+/* ---------- Views ---------- */
+function setView(v) { view = v; render(); scrollTo(0, 0); }
+function render() {
+  const s = store.get(KEY);
+  const expCount = D.docs.filter(d => docState(d).rank < 2).length;
+  const tabs = [["list", "🚚 Transporters"], ["expiring", `⚠ Expiring${expCount ? " (" + expCount + ")" : ""}`]];
+  if (s.role === "admin") tabs.push(["team", "👥 Team"]);
+  const active = view === "detail" ? "list" : view;
+  $("tabs").innerHTML = tabs.map(([k, l]) => `<button class="chip ${k === active ? "on" : ""}" onclick="setView('${k}')">${l}</button>`).join("");
+  ["vList", "vDetail", "vExpiring", "vTeam"].forEach(id => $(id).classList.add("hidden"));
+  if (view === "list") { $("vList").classList.remove("hidden"); renderList(); }
+  if (view === "detail") { $("vDetail").classList.remove("hidden"); renderDetail(); }
+  if (view === "expiring") { $("vExpiring").classList.remove("hidden"); renderExpiring(); }
+  if (view === "team") { $("vTeam").classList.remove("hidden"); renderTeam(); }
+  document.querySelectorAll(".edit-only").forEach(e => e.classList.toggle("hidden", !canEdit()));
+}
+
+function renderList() {
+  const docsS = D.docs.map(docState);
+  const tile = (n, v) => `<div class="card tile" style="margin:0"><small>${n}</small><b>${v}</b></div>`;
+  $("tiles").innerHTML = tile("Approved transporters", D.transporters.filter(t => t.Status === "Approved").length) +
+    tile("Active trucks", D.trucks.filter(k => k.Active).length) +
+    tile("Docs expiring ≤ 30 days", docsS.filter(x => x.k === "soon").length) +
+    tile("Expired docs", docsS.filter(x => x.k === "exp").length);
+  if (!$("fCor").options.length) $("fCor").innerHTML = opts(CORRIDORS, "", "All corridors");
+  $("fStatus").innerHTML = ["All", ...STATUSES].map(x => `<button class="chip ${x === statusF ? "on" : ""}" onclick="statusF='${x}';renderList()">${x}</button>`).join("");
+  const q = $("q").value.trim().toLowerCase(), cor = $("fCor").value;
+  const list = D.transporters.filter(t => {
+    if (statusF !== "All" && t.Status !== statusF) return false;
+    if (cor && !String(t.Corridors).includes(cor)) return false;
+    if (!q) return true;
+    const hay = [t.Company, t["Registration / TIN"], t["Contact person"], t.Phone, t.Email, t.Country,
+      ...trucksOf(t.ID).flatMap(k => [k["Horse plate"], k["Trailer plate"], k.Driver])].join(" ").toLowerCase();
+    return hay.includes(q);
+  }).sort((a, b) => String(a.Company).localeCompare(b.Company));
+  $("list").innerHTML = list.length ? list.map(t => `<div class="item" onclick="openT('${t.ID}')">
+      <div><b>${esc(t.Company)}</b><br><small class="muted">${esc(t.Country || "—")} · ${esc(t.Corridors || "no corridor set")} · ${(n => n + (n === 1 ? " truck" : " trucks"))(trucksOf(t.ID).filter(k => k.Active).length)}${t["Contact person"] ? " · " + esc(t["Contact person"]) : ""}${t.Phone ? " " + esc(t.Phone) : ""}</small></div>
+      <div style="text-align:right;display:flex;flex-direction:column;gap:6px;align-items:flex-end"><span class="pill s-${esc(t.Status)}">${esc(t.Status)}</span>${worstDoc(t.ID)}</div>
+    </div>`).join("")
+    : `<p class="muted">${D.transporters.length ? "No transporters match." : "No transporters yet." + (canEdit() ? " Tap “+ New transporter” to add the first one." : "")}</p>`;
+}
+
+/* ----- Transporter detail ----- */
+let corSel = [];
+function openT(id) { curId = id; resetK(); resetD(); setView("detail"); }
+function renderDetail() {
+  const t = curId ? tById(curId) : null, ro = !canEdit();
+  $("dTitle").textContent = t ? t.Company : "New transporter";
+  $("dStatus").innerHTML = t ? `<span class="pill s-${esc(t.Status)}">${esc(t.Status)}</span>` : "";
+  $("tCompany").value = t?.Company || ""; $("tReg").value = t?.["Registration / TIN"] || "";
+  $("tCountry").innerHTML = opts(COUNTRIES, t?.Country || "", "— country —");
+  $("tStatus").innerHTML = opts(STATUSES, t?.Status || "Pending");
+  $("tContact").value = t?.["Contact person"] || ""; $("tPhone").value = t?.Phone || ""; $("tEmail").value = t?.Email || "";
+  $("tNotes").value = t?.Notes || ""; $("tErr").textContent = "";
+  corSel = t?.Corridors ? String(t.Corridors).split("; ").filter(Boolean) : [];
+  paintCor();
+  document.querySelectorAll("#vDetail input, #vDetail select, #vDetail textarea").forEach(e => e.disabled = ro);
+  $("dMore").classList.toggle("hidden", !t);
+  if (!t) return;
+  // Trucks
+  const ks = trucksOf(t.ID).sort((a, b) => (b.Active - a.Active) || String(a["Horse plate"]).localeCompare(b["Horse plate"]));
+  $("kCount").textContent = `· ${ks.filter(k => k.Active).length} active`;
+  $("kList").innerHTML = ks.length ? ks.map(k => `<div class="line" style="${k.Active ? "" : "opacity:.5"}">
+      <div><b>${esc(k["Horse plate"])}</b>${k["Trailer plate"] ? " / " + esc(k["Trailer plate"]) : ""} <span class="muted small">${esc(k["Truck type"] || "")}${k["Capacity (t)"] ? " · " + k["Capacity (t)"] + " t" : ""}${k.Active ? "" : " · inactive"}</span><br>
+        <small class="muted">${k.Driver ? "Driver: " + esc(k.Driver) + (k["Driver phone"] ? " · " + esc(k["Driver phone"]) : "") : "No driver set"}</small></div>
+      ${canEdit() ? `<div class="row"><button class="chip" onclick="editK('${k.ID}')">Edit</button>
+        <button class="chip" onclick="toggleK('${k.ID}', this)">${k.Active ? "Deactivate" : "Reactivate"}</button></div>` : ""}
+    </div>`).join("") : `<p class="muted small">No trucks yet.</p>`;
+  $("kType").innerHTML = $("kType").innerHTML || opts(TRUCK_TYPES, "", "— type —");
+  // Documents
+  const ds = docsOf(t.ID).map(d => ({ d, s: docState(d) })).sort((a, b) => a.s.rank - b.s.rank || a.d.Expiry - b.d.Expiry);
+  $("dList").innerHTML = ds.length ? ds.map(({ d, s }) => `<div class="line">
+      <div><b>${esc(d.Type)}</b> <span class="muted small">${d["Truck ID"] ? "· truck " + esc(plateOf(d["Truck ID"])) : "· company"}${d.Number ? " · No. " + esc(d.Number) : ""}</span><br>
+        <span class="pill d-${s.k}" style="margin-top:4px">${s.label}</span></div>
+      ${canEdit() ? `<div class="row"><button class="chip" onclick="editD('${d.ID}')">Edit</button>
+        <button class="chip" onclick="removeD('${d.ID}', this)">Remove</button></div>` : ""}
+    </div>`).join("") : `<p class="muted small">No documents yet.</p>`;
+  $("dType").innerHTML = $("dType").innerHTML || opts(DOC_TYPES, "", "— type —");
+  const keep = $("dFor").value;
+  $("dFor").innerHTML = `<option value="">Company</option>` + trucksOf(t.ID).filter(k => k.Active).map(k => `<option value="${k.ID}">Truck ${esc(k["Horse plate"])}</option>`).join("");
+  $("dFor").value = keep;
+}
+function paintCor() {
+  $("tCor").innerHTML = CORRIDORS.map(c => `<button class="chip ${corSel.includes(c) ? "on" : ""}" ${canEdit() ? "" : "disabled"}
+    onclick="corSel=corSel.includes('${c}')?corSel.filter(x=>x!=='${c}'):[...corSel,'${c}'];paintCor()">${c}</button>`).join("");
+}
+async function saveT() {
+  const t = { ID: curId || "", Company: $("tCompany").value, "Registration / TIN": $("tReg").value, Country: $("tCountry").value,
+    Status: $("tStatus").value, "Contact person": $("tContact").value, Phone: $("tPhone").value, Email: $("tEmail").value,
+    Corridors: corSel.join("; "), Notes: $("tNotes").value };
+  if (t.Company.trim().length < 2) return $("tErr").textContent = "Enter the company name.";
+  $("tErr").textContent = "Saving…";
+  try {
+    const r = await api("saveTransporter", { t });
+    if (!r.ok) return $("tErr").textContent = r.error;
+    $("tErr").textContent = ""; toast(curId ? "Transporter saved." : "Transporter added — now add trucks and documents.");
+    curId = r.id; await load();
+  } catch { $("tErr").textContent = "No connection — nothing was saved."; }
+}
+
+/* ----- Trucks ----- */
+let editKId = "";
+function resetK() { editKId = ""; ["kHorse", "kTrailer", "kCap", "kDriver", "kDPhone"].forEach(i => $(i).value = ""); $("kType").value = ""; $("kErr").textContent = ""; $("kFormTitle").textContent = "Add a truck"; }
+function editK(id) {
+  const k = D.trucks.find(x => x.ID === id); editKId = id;
+  $("kHorse").value = k["Horse plate"]; $("kTrailer").value = k["Trailer plate"]; $("kType").value = k["Truck type"];
+  $("kCap").value = k["Capacity (t)"]; $("kDriver").value = k.Driver; $("kDPhone").value = k["Driver phone"];
+  $("kFormTitle").textContent = "Edit truck " + k["Horse plate"]; $("kHorse").focus();
+}
+async function saveK(extra) {
+  const base = editKId ? D.trucks.find(x => x.ID === editKId) : {};
+  const k = extra || { ...base, ID: editKId, "Transporter ID": curId, "Horse plate": $("kHorse").value, "Trailer plate": $("kTrailer").value,
+    "Truck type": $("kType").value, "Capacity (t)": $("kCap").value, Driver: $("kDriver").value, "Driver phone": $("kDPhone").value };
+  $("kErr").textContent = extra ? "" : "Saving…";
+  try {
+    const r = await api("saveTruck", { k });
+    if (!r.ok) return extra ? toast(r.error) : $("kErr").textContent = r.error;
+    toast(extra ? (k.Active ? "Truck reactivated." : "Truck deactivated.") : editKId ? "Truck saved." : "Truck added.");
+    if (!extra) resetK(); await load();
+  } catch { $("kErr").textContent = "No connection — nothing was saved."; }
+}
+function toggleK(id, btn) {
+  const k = D.trucks.find(x => x.ID === id);
+  if (k.Active && !armOrConfirm(btn, "Tap again")) return;
+  saveK({ ...k, Active: !k.Active });
+}
+
+/* ----- Documents ----- */
+let editDId = "";
+function resetD() { editDId = ""; $("dType").value = ""; $("dFor").value = ""; $("dNum").value = ""; $("dExp").value = ""; $("dErr").textContent = ""; $("dFormTitle").textContent = "Add a document"; }
+function editD(id) {
+  const d = D.docs.find(x => x.ID === id); editDId = id;
+  $("dType").value = d.Type; $("dFor").value = d["Truck ID"] || ""; $("dNum").value = d.Number; $("dExp").value = isoDate(d.Expiry);
+  $("dFormTitle").textContent = "Edit " + d.Type + " (e.g. a renewal: change the expiry date)"; $("dExp").focus();
+}
+async function saveD() {
+  const d = { ID: editDId, "Transporter ID": curId, "Truck ID": $("dFor").value, Type: $("dType").value, Number: $("dNum").value, Expiry: $("dExp").value };
+  if (!d.Type) return $("dErr").textContent = "Pick the document type.";
+  if (!d.Expiry) return $("dErr").textContent = "Enter the expiry date.";
+  $("dErr").textContent = "Saving…";
+  try {
+    const r = await api("saveDoc", { d });
+    if (!r.ok) return $("dErr").textContent = r.error;
+    toast(editDId ? "Document updated." : "Document added."); resetD(); await load();
+  } catch { $("dErr").textContent = "No connection — nothing was saved."; }
+}
+async function removeD(id, btn) {
+  if (!armOrConfirm(btn, "Tap again")) return;
+  try { const r = await api("removeDoc", { id }); toast(r.ok ? "Document removed." : r.error); await load(); }
+  catch { toast("No connection — nothing was removed."); }
+}
+
+/* ----- Expiring ----- */
+function renderExpiring() {
+  const list = D.docs.map(d => ({ d, s: docState(d), t: tById(d["Transporter ID"]) })).filter(x => x.s.rank < 2 && x.t)
+    .sort((a, b) => a.d.Expiry - b.d.Expiry);
+  $("expList").innerHTML = list.length ? list.map(({ d, s, t }) => `<div class="item" onclick="openT('${t.ID}')">
+      <div><b>${esc(t.Company)}</b> <span class="muted small">· ${esc(d.Type)}${d["Truck ID"] ? " · truck " + esc(plateOf(d["Truck ID"])) : ""}</span><br>
+        <small class="muted">${t.Phone ? esc(t["Contact person"] || "") + " " + esc(t.Phone) : "No phone saved"} · expiry ${dateStr(d.Expiry)}</small></div>
+      <span class="pill d-${s.k}" style="align-self:center">${s.label}</span></div>`).join("")
+    : `<p class="muted">✓ Nothing expired or expiring in the next 30 days.</p>`;
+}
+
+/* ----- Team (admin) ----- */
+let newRole = "dispatch", users = [];
+async function renderTeam() {
+  $("uRole").innerHTML = Object.keys(ROLE_HELP).map(r => `<button class="chip ${r === newRole ? "on" : ""}" onclick="newRole='${r}';renderTeamRoles()">${r}</button>`).join("");
+  $("roleHelp").textContent = ROLE_HELP[newRole];
+  try {
+    const r = await api("listUsers"); if (!r.ok) return $("uList").innerHTML = `<p class="muted">${esc(r.error)}</p>`;
+    users = r.users;
+  } catch { return $("uList").innerHTML = `<p class="muted">No connection.</p>`; }
+  $("uList").innerHTML = Object.keys(ROLE_HELP).map(role => {
+    const l = users.filter(u => u.role === role);
+    return `<p class="muted small" style="margin:12px 0 4px;text-transform:uppercase;letter-spacing:.08em;color:var(--brand)">${role} · ${l.filter(u => u.active).length} active</p>` +
+      (l.length ? l.map(u => { const i = users.indexOf(u); return `<div class="line" style="${u.active ? "" : "opacity:.5"}"><span>${esc(u.name)}${u.active ? "" : " · deactivated"}</span>
+        <div class="row"><button class="chip" onclick="editUser(${i})">Reset PIN / role</button>
+        <button class="chip" onclick="toggleUser(${i})">${u.active ? "Deactivate" : "Activate"}</button></div></div>`; }).join("")
+        : `<p class="muted small" style="margin:2px 0">None yet.</p>`);
+  }).join("");
+}
+function renderTeamRoles() { $("uRole").querySelectorAll(".chip").forEach(b => b.classList.toggle("on", b.textContent === newRole)); $("roleHelp").textContent = ROLE_HELP[newRole]; }
+function editUser(i) { const n = users[i].name; $("uName").value = n; $("uPin").value = ""; newRole = users[i].role; renderTeamRoles(); $("uPin").focus(); toast(`Give ${n} a temporary PIN and/or new role, then Save.`); }
+async function saveUser() {
+  const user = { name: $("uName").value, pin: $("uPin").value.trim(), role: newRole };
+  if (user.name.trim().length < 3) return $("uErr").textContent = "Enter the full name.";
+  if (!/^\d{4,6}$/.test(user.pin)) return $("uErr").textContent = "PIN must be 4–6 digits.";
+  try {
+    const r = await api("saveUser", { user });
+    if (!r.ok) return $("uErr").textContent = r.error;
+    $("uErr").textContent = ""; $("uName").value = $("uPin").value = "";
+    toast(r.updated ? "Account updated." : `${user.name} can now sign in with the temporary PIN.`); renderTeam();
+  } catch { $("uErr").textContent = "No connection."; }
+}
+async function toggleUser(i) {
+  try { const r = await api("toggleUser", { target: users[i].name }); if (!r.ok) toast(r.error); renderTeam(); } catch { toast("No connection."); }
+}
+
+/* ----- Excel export of the whole register ----- */
+function loadXLSX() {
+  if (window.XLSX) return Promise.resolve();
+  return new Promise((ok, fail) => { const s = document.createElement("script");
+    s.src = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"; s.onload = ok; s.onerror = fail; document.head.appendChild(s); });
+}
+async function exportExcel() {
+  try { await loadXLSX(); } catch { return toast("Couldn't load the Excel tool."); }
+  const name = id => tById(id)?.Company || "";
+  const T = D.transporters.map(t => ({ Company: t.Company, Status: t.Status, Country: t.Country, Corridors: t.Corridors,
+    "Registration / TIN": t["Registration / TIN"], "Contact person": t["Contact person"], Phone: t.Phone, Email: t.Email,
+    "Active trucks": trucksOf(t.ID).filter(k => k.Active).length, Notes: t.Notes }));
+  const K = D.trucks.map(k => ({ Transporter: name(k["Transporter ID"]), "Horse plate": k["Horse plate"], "Trailer plate": k["Trailer plate"],
+    Type: k["Truck type"], "Capacity (t)": k["Capacity (t)"], Driver: k.Driver, "Driver phone": k["Driver phone"], Active: k.Active ? "Yes" : "No" }));
+  const Dc = D.docs.map(d => ({ Transporter: name(d["Transporter ID"]), "Applies to": d["Truck ID"] ? "Truck " + plateOf(d["Truck ID"]) : "Company",
+    Type: d.Type, Number: d.Number, Expiry: new Date(d.Expiry), Status: docState(d).label }));
+  const wb = XLSX.utils.book_new(), add = (n, rows, w) => { const ws = XLSX.utils.json_to_sheet(rows); ws["!cols"] = w.map(x => ({ wch: x })); XLSX.utils.book_append_sheet(wb, ws, n); };
+  add("Transporters", T, [28, 12, 12, 34, 18, 20, 16, 26, 12, 30]);
+  add("Trucks", K, [28, 13, 13, 12, 12, 20, 16, 8]);
+  add("Documents", Dc, [28, 18, 28, 16, 12, 24]);
+  XLSX.writeFile(wb, `ZCL-Transporters_${isoDate(Date.now())}.xlsx`, { cellDates: true });
+}
+
+/* ---------- Start ---------- */
+function start() {
+  const s = store.get(KEY);
+  if (!s) return showLogin();
+  show("app"); $("topBtns").classList.remove("hidden"); $("who").textContent = "· " + s.name + " (" + s.role + ")";
+  render(); load();
+}
+start();
+// Background refresh only on read-only screens, so nothing being typed gets wiped
+setInterval(() => { if (store.get(KEY) && !document.hidden && $("app").offsetParent && ["list", "expiring"].includes(view)) load(true); }, 120000);
+</script>
+</body>
+</html>
