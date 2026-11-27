@@ -140,7 +140,7 @@
         </div>
         <div class="grid4" style="margin-top:6px">
           <div><label>Search</label><input id="q" placeholder="Company, contact, account manager…" oninput="renderList()"></div>
-          <div><label>Category</label><select id="fCat" onchange="renderList()"><option value="">All</option><option value="ICD">ICD</option><option value="CFS">CFS</option><option value="None">None (not set yet)</option></select></div>
+          <div><label>Type of relationship</label><select id="fCat" onchange="renderList()"><option value="">All</option><option value="ICD">ICD</option><option value="CFS">CFS</option><option value="Transporter">Transporter</option><option value="None">None (not set yet)</option></select></div>
           <div><label>Industry</label><select id="fInd" onchange="renderList()"></select></div>
           <div><label>Contract</label><select id="fCon" onchange="renderList()">
             <option value="">All</option><option value="active">Active contract</option><option value="soon">Expiring ≤ 30 days</option>
@@ -186,7 +186,7 @@
           <div><label>Email</label><input id="cEmail" inputmode="email"></div>
           <div><label>ZCL account manager</label><input id="cAM" list="amList"><datalist id="amList"></datalist></div>
           <div><label>Status</label><select id="cStatus"></select></div>
-          <div><label>Category (facility)</label><select id="cCat"></select></div>
+          <div><label>Type of relationship</label><select id="cCat"></select></div>
         </div>
         <label>Notes</label><textarea id="cNotes" rows="2"></textarea>
         <div class="err" id="cErr"></div>
@@ -239,7 +239,7 @@
     <div id="vVol" class="hidden">
       <div class="card">
         <div class="row" style="justify-content:space-between"><h2>Weekly actual TEUs</h2>
-          <div class="row"><select id="volCat" style="width:auto;padding:8px" onchange="renderVol()"><option value="">All categories</option><option value="ICD">ICD only</option><option value="CFS">CFS only</option><option value="None">Category: None</option></select>
+          <div class="row"><select id="volCat" style="width:auto;padding:8px" onchange="renderVol()"><option value="">All relationships</option><option value="ICD">ICD only</option><option value="CFS">CFS only</option><option value="Transporter">Transporters only</option><option value="None">Relationship: None</option></select>
           <label class="row small muted" style="margin:0;cursor:pointer"><input type="checkbox" id="volAll" style="width:auto" onchange="renderVol()"> Show customers without a commitment</label></div></div>
         <div class="grid2">
           <div><label>Month</label><input type="month" id="volMonth" onchange="renderVol()"></div>
@@ -260,7 +260,7 @@
       <div class="card no-print">
         <div class="row" style="justify-content:space-between;align-items:flex-end">
           <div class="row" style="align-items:flex-end"><div style="min-width:200px"><label style="margin-top:0">Month</label><input type="month" id="dashMonth" onchange="renderDash()"></div>
-            <div><label style="margin-top:0">Category</label><select id="dashCat" onchange="renderDash()"><option value="">All (ICD + CFS + None)</option><option value="ICD">ICD</option><option value="CFS">CFS</option><option value="None">Category: None</option></select></div></div>
+            <div><label style="margin-top:0">Type of relationship</label><select id="dashCat" onchange="renderDash()"><option value="">All</option><option value="ICD">ICD</option><option value="CFS">CFS</option><option value="Transporter">Transporter</option><option value="None">Relationship: None</option></select></div></div>
           <div class="row"><button class="chip" onclick="exportCommitment(false)">⬇ Excel · this month</button>
             <button class="chip" onclick="exportCommitment(true)">⬇ Excel · whole year</button></div>
         </div>
@@ -293,8 +293,8 @@
       <h2>Import from Excel</h2>
       <p class="muted small" id="impFileName" style="margin:0 0 10px"></p>
       <div id="impYearBox" class="hidden" style="max-width:260px"><label>Year (for sheets that only give months)</label><input type="number" id="impYear" onchange="buildImport()"></div>
-      <div style="max-width:260px"><label>These customers are (if the file doesn't say)</label>
-        <select id="impCat" onchange="buildImport()"><option value="">None (set later)</option><option>ICD</option><option>CFS</option></select></div>
+      <div style="max-width:260px"><label>Type of relationship for these customers (if the file doesn't say)</label>
+        <select id="impCat" onchange="buildImport()"><option value="">None (set later)</option><option>ICD</option><option>CFS</option><option>Transporter</option></select></div>
       <div id="impMapBox"></div>
       <div id="impSummary"></div>
       <div class="err" id="impErr"></div>
@@ -330,10 +330,10 @@
 const API = "https://script.google.com/macros/s/AKfycbzWnsA8xphjtokXpwm6y_IPNXq3hBLuHfFcbFe16I10wWJD2533r64zbNFoaTUrKhqcmg/exec";
 
 const STATUSES = ["Active", "Prospect", "On hold", "Closed"];
-const CATEGORIES = ["ICD", "CFS"];
-// Category is ICD or CFS; until the commercial manager sets it, it shows as "None"
-const inCat = (c, f) => !f || (f === "None" ? !c.Category : c.Category === f);
-const catPill = c => c.Category ? `<span class="pill" style="color:#c9b6ff">${esc(c.Category)}</span>` : `<span class="pill d-none">Category: None</span>`;
+const CATEGORIES = ["ICD", "CFS", "Transporter"];
+// Type of relationship: ICD, CFS or Transporter; until the commercial manager sets it, it shows as "None"
+const inCat = (c, f) => !f || (f === "None" ? !c.Relationship : c.Relationship === f);
+const catPill = c => c.Relationship ? `<span class="pill" style="color:#c9b6ff">${esc(c.Relationship)}</span>` : `<span class="pill d-none">Relationship: None</span>`;
 const COUNTRIES = ["Tanzania", "Zambia", "DR Congo", "Malawi", "Namibia", "Zimbabwe", "South Africa", "Kenya", "Other"];
 const INDUSTRIES = ["Mining & minerals", "Agriculture", "Clearing & forwarding", "Shipping & logistics", "Fuel & energy", "Manufacturing", "Trading", "Other"];
 const SERVICES = ["Transport", "Clearing & forwarding", "Warehousing", "Yard handling", "Other"];
@@ -498,8 +498,8 @@ function renderList() {
     tile("Contracts expiring ≤ 30 days", cnt("soon"), "", "soon", cnt("soon") ? "d-soon" : "") +
     tile("Contracts expired", cnt("exp"), "", "exp", cnt("exp") ? "d-exp" : "") +
     tile("No contract", cnt("none"), "", "none") +
-    `<div class="card tile" style="margin:0;cursor:pointer" onclick="$('fCat').value='None';renderList()" title="Show customers still to be set to ICD or CFS">
-      <small>Category: None</small><b>${D.customers.filter(c => !c.Category).length}</b><small>to set as ICD or CFS</small></div>` +
+    `<div class="card tile" style="margin:0;cursor:pointer" onclick="$('fCat').value='None';renderList()" title="Show customers whose type of relationship isn't set yet">
+      <small>Relationship: None</small><b>${D.customers.filter(c => !c.Relationship).length}</b><small>to set as ICD, CFS or Transporter</small></div>` +
     tile(`Committed TEUs · ${MONTHS[m - 1]}`, fmtN(committed)) +
     tile(`Actual TEUs so far · ${MONTHS[m - 1]}`, fmtN(actual), committed ? Math.round(actual / committed * 100) + "% of commitment" : "");
   if (!$("fInd").options.length) $("fInd").innerHTML = opts(INDUSTRIES, "", "All industries");
@@ -536,7 +536,7 @@ function renderProfile() {
     (c.Email ? `<a class="act" href="mailto:${esc(c.Email)}">✉ Email</a>` : "");
   const fact = (l, v) => `<div><small>${l}</small><span>${v ? esc(v) : "<span class='muted'>—</span>"}</span></div>`;
   $("pFacts").innerHTML = fact("Contact person", c["Contact person"]) + fact("Phone", c.Phone) + fact("Email", c.Email) +
-    fact("ZCL account manager", c["Account manager"]) + fact("Category", c.Category || "None — not set yet") + fact("Registration / TIN", c["Registration / TIN"]) + fact("Country", c.Country);
+    fact("ZCL account manager", c["Account manager"]) + fact("Type of relationship", c.Relationship || "None — not set yet") + fact("Registration / TIN", c["Registration / TIN"]) + fact("Country", c.Country);
   $("pNotes").innerHTML = c.Notes ? `<div class="sub" style="margin-top:14px"><small class="muted">Notes</small><div style="white-space:pre-wrap;margin-top:4px">${esc(c.Notes)}</div></div>` : "";
   // Last 12 months
   const months = Array.from({ length: 12 }, (_, i) => { const d = new Date(y, m - 1 - i, 1); return [d.getFullYear(), d.getMonth() + 1]; });
@@ -579,7 +579,7 @@ function renderDetail() {
   $("cCountry").innerHTML = opts(COUNTRIES, c?.Country || "", "— country —"); $("cInd").innerHTML = opts(INDUSTRIES, c?.Industry || "", "— industry —");
   $("cContact").value = c?.["Contact person"] || ""; $("cPhone").value = c?.Phone || ""; $("cEmail").value = c?.Email || "";
   $("cAM").value = c?.["Account manager"] || ""; $("cStatus").innerHTML = opts(STATUSES, c?.Status || "Active"); $("cNotes").value = c?.Notes || "";
-  $("cCat").innerHTML = opts(CATEGORIES, c?.Category || "", "None (not set yet)");
+  $("cCat").innerHTML = opts(CATEGORIES, c?.Relationship || "", "None (not set yet)");
   $("amList").innerHTML = [...new Set(D.customers.map(x => x["Account manager"]).filter(Boolean))].map(a => `<option value="${esc(a)}">`).join("");
   $("cErr").textContent = "";
   document.querySelectorAll("#vDetail input, #vDetail select, #vDetail textarea").forEach(e => e.disabled = ro);
@@ -600,7 +600,7 @@ function renderDetail() {
 }
 async function saveC() {
   const c = { ID: curId || "", Company: $("cCompany").value, "Registration / TIN": $("cReg").value, Country: $("cCountry").value, Industry: $("cInd").value,
-    "Contact person": $("cContact").value, Phone: $("cPhone").value, Email: $("cEmail").value, "Account manager": $("cAM").value, Status: $("cStatus").value, Notes: $("cNotes").value, Category: $("cCat").value };
+    "Contact person": $("cContact").value, Phone: $("cPhone").value, Email: $("cEmail").value, "Account manager": $("cAM").value, Status: $("cStatus").value, Notes: $("cNotes").value, Relationship: $("cCat").value };
   if (c.Company.trim().length < 2) return $("cErr").textContent = "Enter the company name.";
   $("cErr").textContent = "Saving…";
   try {
@@ -739,7 +739,7 @@ async function renderDash() {
   const C = rows.reduce((s, r) => s + r.cm, 0), A = rows.reduce((s, r) => s + r.total, 0), committed = rows.filter(r => r.cm > 0);
   const [cy, cm0] = thisYM(), partial = cy === y && cm0 === m;
   const tile = (l, v, note, cls) => `<div class="card tile" style="margin:0"><small>${l}</small><b class="${cls || ""}">${v}</b>${note ? `<small>${note}</small>` : ""}</div>`;
-  const catName = $("dashCat").value === "None" ? "Category: None" : $("dashCat").value || "All categories";
+  const catName = $("dashCat").value === "None" ? "Relationship: None" : $("dashCat").value || "All relationships";
   $("dTiles").innerHTML = tile("Committed TEUs", fmtN(C), `${MONTHS[m - 1]} ${y} · ${catName}`) + tile("Actual TEUs", fmtN(A), partial ? "month so far" : "") +
     tile("Achieved", C ? Math.round(A / C * 100) + "%" : "—", "of commitment", C ? vClass(variance(A, C)) : "") +
     tile("Meeting commitment", committed.filter(r => r.total >= r.cm).length, "of " + committed.length + " customers") +
@@ -792,7 +792,7 @@ function commitmentSheet(y, m) {
   const body = rows.map((r, i) => [i + 1, r.c.Company, r.cm ? r1(r.cm / n) : "", r.cm || "", r1(r.total / n), r.v == null ? "" : r1(r.v), ...r.weeks.map(v => v ?? ""), r.total]);
   const C = rows.reduce((s, r) => s + r.cm, 0), A = rows.reduce((s, r) => s + r.total, 0);
   body.push(["", "TOTAL", r1(C / n), C, r1(A / n), C ? r1(A / C - 1) : "", ...Array.from({ length: n }, (_, i) => rows.reduce((s, r) => s + (r.weeks[i] || 0), 0)), A]);
-  const ws = XLSX.utils.aoa_to_sheet([[`CUSTOMERS ANALYSIS · ${MONTHS[m - 1]} ${y} · ${$("dashCat").value === "None" ? "Category: None" : $("dashCat").value || "All categories"}`], head, ...body]);
+  const ws = XLSX.utils.aoa_to_sheet([[`CUSTOMERS ANALYSIS · ${MONTHS[m - 1]} ${y} · ${$("dashCat").value === "None" ? "Relationship: None" : $("dashCat").value || "All relationships"}`], head, ...body]);
   ws["!cols"] = [6, 36, 14, 14, 12, 12, ...Array(n).fill(12), 14].map(w => ({ wch: w }));
   for (let i = 0; i < body.length; i++) { const cell = ws[XLSX.utils.encode_cell({ r: i + 2, c: 5 })]; if (cell && cell.t === "n") cell.z = "0%"; }
   return ws;
@@ -810,7 +810,7 @@ async function exportRegister() {
   const name = id => cById(id)?.Company || "";
   const wb = XLSX.utils.book_new(), add = (n, r) => XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(r), n);
   add("Customers", D.customers.map(c => ({ Company: c.Company, Status: c.Status, Industry: c.Industry, Country: c.Country, "Registration / TIN": c["Registration / TIN"],
-    "Contact person": c["Contact person"], Phone: c.Phone, Email: c.Email, "Account manager": c["Account manager"], Category: c.Category || "None", "Contract status": cState(c.ID).short || "", Notes: c.Notes })));
+    "Contact person": c["Contact person"], Phone: c.Phone, Email: c.Email, "Account manager": c["Account manager"], "Type of relationship": c.Relationship || "None", "Contract status": cState(c.ID).short || "", Notes: c.Notes })));
   add("Contracts", D.contracts.map(k => ({ Customer: name(k["Customer ID"]), "Contract number": k["Contract number"], Service: k.Service,
     Start: k.Start ? new Date(k.Start) : "", End: k.End ? new Date(k.End) : "", "TEUs per month": k["TEUs per month"], Value: k.Value, Currency: k.Currency,
     "Payment terms": k["Payment terms"], Status: kState(k).label })));
@@ -839,7 +839,7 @@ const COLS = {
   Industry: ["industry", "sector", "cargo", "cargotype", "commodity"], "Contact person": ["contactperson", "contact", "contactname"],
   Phone: ["phone", "phoneno", "tel", "telephone", "mobile", "cell"], Email: ["email", "emailaddress"],
   "Account manager": ["accountmanager", "am", "salesperson", "salesrep", "relationshipmanager"], Status: ["status"], Notes: ["notes", "remarks", "comments"],
-  Category: ["category", "facility", "icdcfs", "icdorcfs", "depot", "site", "terminal", "location"],
+  Relationship: ["typeofrelationship", "relationship", "relationshiptype", "customertype", "category", "facility", "icdcfs", "icdorcfs", "depot", "site", "terminal"],
   "Contract number": ["contractnumber", "contractno", "contract", "contractref"], Service: ["service", "servicetype"],
   Start: ["start", "startdate", "contractstart", "from", "datesigned"], End: ["end", "enddate", "contractend", "contractexpiry", "expiry", "to", "validuntil"],
   "TEUs per month": ["teuspermonth", "teupermonth", "commitment", "monthlycommitment", "teucommitment", "commitmentmonth", "volumecommitment"],
@@ -853,7 +853,7 @@ const COLS = {
 };
 // What each column can be matched to in the import screen
 const FIELD_LABELS = { "": "— ignore this column —", Company: "Customer / company name", "Registration / TIN": "Registration / TIN", Country: "Country", Industry: "Industry / cargo",
-  "Contact person": "Contact person", Phone: "Phone", Email: "Email", "Account manager": "ZCL account manager", Status: "Customer status", Category: "Category (ICD / CFS)", Notes: "Notes",
+  "Contact person": "Contact person", Phone: "Phone", Email: "Email", "Account manager": "ZCL account manager", Status: "Customer status", Relationship: "Type of relationship (ICD / CFS / Transporter)", Notes: "Notes",
   "Contract number": "Contract number", Service: "Service", Start: "Contract start date", End: "Contract end date", "TEUs per month": "TEU commitment per month",
   Value: "Contract value", Currency: "Currency", "Payment terms": "Payment terms",
   Date: "Date of movement", Year: "Year", Month: "Month", Week: "Week of month", TEUs: "TEUs moved", Qty: "Number of containers", Size: "Container size (20ft / 40ft)",
@@ -919,8 +919,8 @@ function buildImport() {
     prevSig = sig; prevName = sn;
     rows.forEach(r => {
       const name = canonName(r[iName]);
-      // Category for the monthly workbook: from the sheet name (e.g. "October ICD") or the choice above the summary
-      if (!seen[name]) { seen[name] = 1; out.customers.push({ Company: name, Category: /\bicd\b/i.test(sn) ? "ICD" : /\bcfs\b/i.test(sn) ? "CFS" : $("impCat").value }); }
+      // Type of relationship for the monthly workbook: from the sheet name (e.g. "October ICD") or the choice above the summary
+      if (!seen[name]) { seen[name] = 1; out.customers.push({ Company: name, Relationship: /\bicd\b/i.test(sn) ? "ICD" : /\bcfs\b/i.test(sn) ? "CFS" : /transport/i.test(sn) ? "Transporter" : $("impCat").value }); }
       let cm = Number(r[iMo]); if (!(cm >= 0) && Number(r[iWk]) >= 0) cm = Number(r[iWk]) * 5;
       (commitBy[name] ||= []).push([m, cm || 0]);
       if (!skipVol) weekCols.forEach(([i, w]) => { const t = r[i]; if (t !== "" && t != null && !isNaN(Number(t)) && w <= weeksIn(year, m)) out.volumes.push({ Company: name, y: year, m, w, t: Number(t) }); });
@@ -962,7 +962,7 @@ function buildImport() {
       if (!seen[name]) { seen[name] = 1; }
       out.customers.push({ Company: name, "Registration / TIN": f["Registration / TIN"], Country: f.Country, Industry: f.Industry, "Contact person": f["Contact person"],
         Phone: String(f.Phone ?? ""), Email: f.Email, "Account manager": f["Account manager"], Status: f.Status, Notes: f.Notes,
-        Category: f.Category ?? (/\bicd\b/i.test(sn) ? "ICD" : /\bcfs\b/i.test(sn) ? "CFS" : $("impCat").value) });
+        Relationship: f.Relationship ?? (/\bicd\b/i.test(sn) ? "ICD" : /\bcfs\b/i.test(sn) ? "CFS" : /transport/i.test(sn) ? "Transporter" : $("impCat").value) });
       if (f.Start || f["Contract number"] || (f["TEUs per month"] !== undefined && f["TEUs per month"] !== ""))
         out.contracts.push({ Company: name, "Contract number": String(f["Contract number"] ?? ""), Service: f.Service, Start: parseDate(f.Start) || "",
           End: parseDate(f.End) || "", "TEUs per month": f["TEUs per month"], Value: f.Value, Currency: f.Currency, "Payment terms": f["Payment terms"] });
@@ -1026,7 +1026,7 @@ async function downloadTemplate() {
   try { await loadXLSX(); } catch { return toast("Couldn't load the Excel tool."); }
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet([{ Company: "Example Minerals Ltd", "Registration / TIN": "123-456-789", Country: "Zambia", Industry: "Mining & minerals",
-    "Contact person": "Jane Doe", Phone: "+260 970 000 000", Email: "logistics@example.com", "Account manager": "", Status: "Active", Category: "ICD",
+    "Contact person": "Jane Doe", Phone: "+260 970 000 000", Email: "logistics@example.com", "Account manager": "", Status: "Active", "Type of relationship": "ICD",
     "Contract number": "ZCL/C/2026/001", Service: "Transport", "Contract start": "01/01/2026", "Contract end": "31/12/2026", "TEUs per month": 40, Value: 120000, Currency: "USD", "Payment terms": "30 days" }]), "Customers");
   XLSX.writeFile(wb, "ZCL-Customers-import-template.xlsx");
 }
