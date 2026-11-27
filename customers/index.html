@@ -281,6 +281,22 @@
       </div>
     </div>
 
+    <!-- TO CLASSIFY: customers with no type of relationship yet -->
+    <div id="vClassify" class="hidden">
+      <div class="card">
+        <h2>Customers to classify</h2>
+        <p class="muted small" style="margin:0">These customers have no type of relationship yet. Tap ICD, CFS or Transporter to set one — it saves straight away and the customer leaves this list. Or tick several and set them together.</p>
+        <div class="grid2"><div><label>Search</label><input id="clQ" placeholder="Company…" oninput="renderClassify()"></div></div>
+        <div class="row edit-only" style="margin-top:12px;position:sticky;top:0;background:var(--card);padding:8px 0;z-index:2">
+          <label class="row small" style="margin:0;cursor:pointer"><input type="checkbox" id="clAll" style="width:auto" onchange="document.querySelectorAll('.clBox').forEach(b => b.checked = this.checked);clCount()"> Select all</label>
+          <span class="muted small" id="clSel"></span>
+          <span class="small muted">Set selected to:</span>
+          <button class="chip" onclick="setRelSelected('ICD')">ICD</button><button class="chip" onclick="setRelSelected('CFS')">CFS</button><button class="chip" onclick="setRelSelected('Transporter')">Transporter</button>
+        </div>
+        <div id="clList"></div>
+      </div>
+    </div>
+
     <!-- EXPIRING -->
     <div id="vExpiring" class="hidden card">
       <h2>Contracts and documents expiring or expired</h2>
@@ -293,8 +309,6 @@
       <h2>Import from Excel</h2>
       <p class="muted small" id="impFileName" style="margin:0 0 10px"></p>
       <div id="impYearBox" class="hidden" style="max-width:260px"><label>Year (for sheets that only give months)</label><input type="number" id="impYear" onchange="buildImport()"></div>
-      <div style="max-width:260px"><label>Type of relationship for these customers (if the file doesn't say)</label>
-        <select id="impCat" onchange="buildImport()"><option value="">None (set later)</option><option>ICD</option><option>CFS</option><option>Transporter</option></select></div>
       <div id="impMapBox"></div>
       <div id="impSummary"></div>
       <div class="err" id="impErr"></div>
@@ -471,14 +485,15 @@ function setView(v) { view = v; render(); scrollTo(0, 0); }
 function render() {
   const s = store.get(KEY);
   const expCount = D.contracts.filter(k => ["exp", "soon"].includes(kState(k).k) && !hasNewer(k)).length + D.docs.filter(d => docState(d).rank < 2).length;
-  const tabs = [["list", "👥 Customers"], ["vol", "📦 Weekly volumes"], ["dash", "📊 Commitment"], ["expiring", `⚠ Expiring${expCount ? " (" + expCount + ")" : ""}`]];
+  const toClassify = D.customers.filter(c => !c.Relationship).length;
+  const tabs = [["list", "👥 Customers"], ["classify", `🏷 To classify${toClassify ? " (" + toClassify + ")" : ""}`], ["vol", "📦 Weekly volumes"], ["dash", "📊 Commitment"], ["expiring", `⚠ Expiring${expCount ? " (" + expCount + ")" : ""}`]];
   if (s.role === "admin") tabs.push(["team", "🔑 Team"]);
   const active = ["detail", "profile", "import"].includes(view) ? "list" : view;
   $("tabs").innerHTML = tabs.map(([k, l]) => `<button class="chip ${k === active ? "on" : ""}" onclick="setView('${k}')">${l}</button>`).join("");
-  const V = { list: "vList", profile: "vProfile", detail: "vDetail", vol: "vVol", dash: "vDash", expiring: "vExpiring", import: "vImport", team: "vTeam" };
+  const V = { list: "vList", profile: "vProfile", detail: "vDetail", vol: "vVol", dash: "vDash", expiring: "vExpiring", import: "vImport", team: "vTeam", classify: "vClassify" };
   Object.values(V).forEach(id => $(id).classList.add("hidden"));
   $(V[view]).classList.remove("hidden");
-  ({ list: renderList, profile: renderProfile, detail: renderDetail, vol: renderVol, dash: renderDash, expiring: renderExpiring, team: renderTeam }[view] || (() => {}))();
+  ({ list: renderList, profile: renderProfile, detail: renderDetail, vol: renderVol, dash: renderDash, expiring: renderExpiring, team: renderTeam, classify: renderClassify }[view] || (() => {}))();
   document.querySelectorAll(".edit-only").forEach(e => e.classList.toggle("hidden", !canEdit()));
   document.querySelectorAll(".admin-only").forEach(e => e.classList.toggle("hidden", s.role !== "admin" || view !== "detail" || !curId));
 }
@@ -498,7 +513,7 @@ function renderList() {
     tile("Contracts expiring ≤ 30 days", cnt("soon"), "", "soon", cnt("soon") ? "d-soon" : "") +
     tile("Contracts expired", cnt("exp"), "", "exp", cnt("exp") ? "d-exp" : "") +
     tile("No contract", cnt("none"), "", "none") +
-    `<div class="card tile" style="margin:0;cursor:pointer" onclick="$('fCat').value='None';renderList()" title="Show customers whose type of relationship isn't set yet">
+    `<div class="card tile" style="margin:0;cursor:pointer" onclick="setView('classify')" title="Open the To classify tab">
       <small>Relationship: None</small><b>${D.customers.filter(c => !c.Relationship).length}</b><small>to set as ICD, CFS or Transporter</small></div>` +
     tile(`Committed TEUs · ${MONTHS[m - 1]}`, fmtN(committed)) +
     tile(`Actual TEUs so far · ${MONTHS[m - 1]}`, fmtN(actual), committed ? Math.round(actual / committed * 100) + "% of commitment" : "");
@@ -659,6 +674,37 @@ async function saveD() {
 async function removeD(id, btn) {
   if (!armOrConfirm(btn, "Tap again")) return;
   try { const r = await api("removeDoc", { id }); toast(r.ok ? "Document removed." : r.error); await load(); } catch { toast("No connection."); }
+}
+
+/* ----- To classify ----- */
+function renderClassify() {
+  const [y, m] = thisYM(), q = $("clQ").value.trim().toLowerCase();
+  const list = D.customers.filter(c => !c.Relationship && (!q || String(c.Company).toLowerCase().includes(q)))
+    .sort((a, b) => commitment(b.ID, y, m) - commitment(a.ID, y, m) || String(a.Company).localeCompare(b.Company));
+  $("clAll").checked = false;
+  $("clList").innerHTML = list.length ? list.map(c => { const cm = commitment(c.ID, y, m);
+    return `<div class="line"><label class="row" style="margin:0;cursor:pointer;gap:10px;flex:1;min-width:0;color:var(--text);font-size:15px">
+        ${canEdit() ? `<input type="checkbox" class="clBox" data-id="${c.ID}" style="width:auto" onchange="clCount()">` : ""}
+        <span><b>${esc(c.Company)}</b><br><small class="muted">${[c.Industry, c["Contact person"], cm ? fmtN(cm) + " TEU/month" : "no commitment"].filter(Boolean).map(esc).join(" · ")}</small></span></label>
+      <div class="row">${canEdit() ? ["ICD", "CFS", "Transporter"].map(v => `<button class="chip" onclick="setRel(['${c.ID}'],'${v}')">${v}</button>`).join("") : ""}
+        <button class="chip" onclick="openC('${c.ID}')">Open</button></div></div>`; }).join("")
+    : `<p class="muted">✓ Every customer has a type of relationship.</p>`;
+  clCount();
+}
+function clCount() { const n = document.querySelectorAll(".clBox:checked").length; $("clSel").textContent = n ? n + " selected" : ""; }
+function setRelSelected(v) {
+  const ids = [...document.querySelectorAll(".clBox:checked")].map(b => b.dataset.id);
+  if (!ids.length) return toast("Tick the customers first.");
+  setRel(ids, v);
+}
+async function setRel(ids, v) {
+  try {
+    const r = await api("setRelationship", { ids, relationship: v });
+    if (!r.ok) return toast(r.error);
+    D.customers.forEach(c => { if (ids.includes(c.ID)) c.Relationship = v; });   // update straight away; full refresh follows
+    toast(`${ids.length === 1 ? D.customers.find(c => c.ID === ids[0])?.Company : ids.length + " customers"} → ${v}`);
+    render(); load(true);
+  } catch { toast("No connection — nothing was changed."); }
 }
 
 /* ----- Weekly volumes ----- */
@@ -833,6 +879,17 @@ function renderExpiring() {
 
 /* ----- Import: the commitment workbook (monthly sheets) or a plain customer list ----- */
 const norm = h => String(h ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+// Work out the type of relationship from what a row (plus sheet/file name) says: ICD, CFS or transport words.
+// Ambiguous or nothing found → "" (None), to be set in the "To classify" tab.
+function detectRel(text) {
+  const t = " " + String(text ?? "").toLowerCase() + " ";
+  const icd = /[^a-z]icd[^a-z]/.test(t), cfs = /[^a-z]cfs[^a-z]/.test(t), tr = /transporter|transport\b|haulage|haulier|trucking/.test(t);
+  if (tr && !icd && !cfs) return "Transporter";
+  if (icd && !cfs) return "ICD";
+  if (cfs && !icd) return "CFS";
+  return "";
+}
+const relValue = v => detectRel(v) || "";
 // Company-name key for matching: Limited→ltd, Company→co, &→and, punctuation and spaces ignored
 const nameKey = n => norm(String(n ?? "").toLowerCase().replace(/&/g, " and ").replace(/\blimited\b/g, "ltd").replace(/\bcompany\b/g, "co").replace(/\bcorporation\b/g, "corp"));
 const COLS = {
@@ -926,7 +983,7 @@ function buildImport() {
     rows.forEach(r => {
       const name = canonName(r[iName]);
       // Type of relationship for the monthly workbook: from the sheet name (e.g. "October ICD") or the choice above the summary
-      if (!seen[name]) { seen[name] = 1; out.customers.push({ Company: name, Relationship: /\bicd\b/i.test(sn) ? "ICD" : /\bcfs\b/i.test(sn) ? "CFS" : /transport/i.test(sn) ? "Transporter" : $("impCat").value }); }
+      if (!seen[name]) { seen[name] = 1; out.customers.push({ Company: name, Relationship: detectRel(r.join(" ")) || detectRel(sn) || detectRel(impName) }); }
       let cm = Number(r[iMo]); if (!(cm >= 0) && Number(r[iWk]) >= 0) cm = Number(r[iWk]) * 5;
       (commitBy[name] ||= []).push([m, cm || 0]);
       if (!skipVol) weekCols.forEach(([i, w]) => { const t = r[i]; if (t !== "" && t != null && !isNaN(Number(t)) && w <= weeksIn(year, m)) out.volumes.push({ Company: name, y: year, m, w, t: Number(t) }); });
@@ -968,7 +1025,7 @@ function buildImport() {
       if (!seen[name]) { seen[name] = 1; }
       out.customers.push({ Company: name, "Registration / TIN": f["Registration / TIN"], Country: f.Country, Industry: f.Industry, "Contact person": f["Contact person"],
         Phone: String(f.Phone ?? ""), Email: f.Email, "Account manager": f["Account manager"], Status: f.Status, Notes: f.Notes,
-        Relationship: f.Relationship ?? (/\bicd\b/i.test(sn) ? "ICD" : /\bcfs\b/i.test(sn) ? "CFS" : /transport/i.test(sn) ? "Transporter" : $("impCat").value) });
+        Relationship: relValue(f.Relationship) || detectRel(r.join(" ")) || detectRel(sn) || detectRel(impName) });
       if (f.Start || f["Contract number"] || (f["TEUs per month"] !== undefined && f["TEUs per month"] !== ""))
         out.contracts.push({ Company: name, "Contract number": String(f["Contract number"] ?? ""), Service: f.Service, Start: parseDate(f.Start) || "",
           End: parseDate(f.End) || "", "TEUs per month": f["TEUs per month"], Value: f.Value, Currency: f.Currency, "Payment terms": f["Payment terms"] });
@@ -1008,6 +1065,9 @@ function buildImport() {
   $("impFileName").textContent = `${impName} · ${wb.SheetNames.length} sheet${wb.SheetNames.length > 1 ? "s" : ""}` + (monthly.length ? ` · ${monthly.length} monthly commitment sheet${monthly.length > 1 ? "s" : ""}` : "");
   const line = (b, t) => `<div class="line"><span>${t}</span><b>${b}</b></div>`;
   $("impSummary").innerHTML = line(names.filter(n => !have.has(n)).length, "New customers") + line(names.filter(n => have.has(n)).length, "Existing customers (blank cells won't overwrite)") +
+    (() => { const rc = k => out.customers.filter(c => (c.Relationship || "") === k).length;
+      return line(`ICD ${rc("ICD")} · CFS ${rc("CFS")} · Transporter ${rc("Transporter")} · None ${rc("")}`, "Type of relationship (read from the file)"); })() +
+    (out.customers.some(c => !c.Relationship) ? `<p class="muted small" style="margin:4px 0">Customers the file doesn't say anything about stay <b>None</b> — they'll be listed in the 🏷 To classify tab. Existing customers keep the relationship they already have.</p>` : "") +
     line(out.contracts.length, "Contracts / commitments") + line(out.volumes.length, "Weekly TEU entries" + (monthsList ? ` (${monthsList} ${year})` : "")) +
     (merges.length ? `<div class="sub small"><b>Same company, different spelling — merged and updated:</b><br>${merges.map(([a, b]) => `${esc(b)} → <b>${esc(a)}</b>${existing.has(a) ? " <span class='muted'>(existing customer)</span>" : ""}`).join("<br>")}</div>` : "") +
     (notes.length ? `<div class="sub small" style="border-left:3px solid var(--warn)">${notes.map(n => "⚠ " + n).join("<br>")}</div>` : "");
