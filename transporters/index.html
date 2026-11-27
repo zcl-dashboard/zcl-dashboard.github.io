@@ -51,6 +51,21 @@
     border-radius: 12px; text-align: center; font-size: 15px; box-shadow: 0 6px 20px rgba(0,0,0,.4); z-index: 9; }
   .login { max-width: 400px; margin: 40px auto; }
   h2 { font-size: 18px; margin: 0 0 4px; } h3 { font-size: 15px; margin: 0; }
+  /* Dashboard (chart colours = validated dark categorical slot 1; status colours carry text labels) */
+  :root { --s1: #338ced; --grid: rgba(143,163,181,.14); }
+  .dgrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+  @media (max-width: 800px) { .dgrid { grid-template-columns: minmax(0, 1fr); } }
+  .dgrid .card { margin: 0; min-width: 0; } .dgrid .full { grid-column: 1 / -1; }
+  .dsub { font-size: 12px; color: var(--muted); margin: 2px 0 10px; }
+  .chart { position: relative; height: 230px; }
+  .chart .empty { display: grid; place-items: center; height: 100%; color: var(--muted); font-size: 14px; }
+  .seg { display: flex; gap: 2px; height: 26px; border-radius: 6px; overflow: hidden; margin: 6px 0 8px; background: var(--bg); }
+  .seg div { min-width: 2px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+  .meter { display: grid; grid-template-columns: 200px minmax(0, 1fr) 120px; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+  .meter:last-child { border-bottom: 0; } .meter .seg { margin: 0; height: 14px; }
+  @media (max-width: 640px) { .meter { grid-template-columns: minmax(0, 1fr) 90px; } .meter .seg { grid-column: 1 / -1; grid-row: 2; } }
   /* Transporter profile */
   .prof-head { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; align-items: flex-start; }
   .prof-head h1 { font-size: 24px; margin: 0 0 4px; }
@@ -138,6 +153,21 @@
       </div>
     </div>
 
+    <!-- DASHBOARD -->
+    <div id="vDash" class="hidden">
+      <div class="tiles" id="dTiles"></div>
+      <div class="dgrid">
+        <div class="card full"><h3>Transporters by status</h3><div id="dStatusMix"></div></div>
+        <div class="card"><h3>Fleet by truck type</h3><div class="dsub">Active trucks</div><div class="chart" id="w1"><canvas id="cType"></canvas></div></div>
+        <div class="card"><h3>Biggest fleets</h3><div class="dsub">Active capacity in tonnes · top 10</div><div class="chart" id="w2"><canvas id="cCap"></canvas></div></div>
+        <div class="card"><h3>Transporters per corridor</h3><div class="dsub">Approved transporters</div><div class="chart" id="w3"><canvas id="cCor"></canvas></div></div>
+        <div class="card"><h3>Transporters by country</h3><div class="dsub">All statuses</div><div class="chart" id="w4"><canvas id="cCountry"></canvas></div></div>
+        <div class="card full"><h3>Document compliance by type</h3><div class="dsub">Valid · expiring within 30 days · expired</div><div id="dCompliance"></div></div>
+        <div class="card full"><h3>Upcoming expiries</h3><div class="dsub">Documents expiring each month · red = already expired</div><div class="chart" id="w5"><canvas id="cExp"></canvas></div></div>
+        <div class="card full"><h3>Needs attention</h3><div class="dsub">Approved or pending transporters with expired documents, no documents or no trucks</div><div id="dAttention"></div></div>
+      </div>
+    </div>
+
     <!-- IMPORT PREVIEW -->
     <div id="vImport" class="hidden card">
       <h2>Import from Excel</h2>
@@ -190,7 +220,11 @@
         </div>
         <label>Notes</label><textarea id="tNotes" rows="2"></textarea>
         <div class="err" id="tErr"></div>
-        <button class="btn edit-only" onclick="saveT()">Save transporter</button>
+        <div class="row"><button class="btn edit-only" onclick="saveT()">Save transporter</button>
+          <button class="btn danger admin-only hidden" id="rmT" onclick="removeT()">Remove transporter</button></div>
+        <div class="sub admin-only hidden" id="rmBox" style="display:none"><label style="margin-top:0">Reason for removing (required)</label>
+          <input id="rmReason" placeholder="e.g. Sample data / duplicate / no longer trading">
+          <p class="muted small" style="margin:6px 0 0">It disappears from the register, but stays in the Sheet and the Audit tab.</p></div>
       </div>
 
       <div id="dMore">
@@ -376,11 +410,12 @@ function setView(v) { view = v; render(); scrollTo(0, 0); }
 function render() {
   const s = store.get(KEY);
   const expCount = D.docs.filter(d => docState(d).rank < 2).length;
-  const tabs = [["list", "🚚 Transporters"], ["expiring", `⚠ Expiring${expCount ? " (" + expCount + ")" : ""}`]];
+  const tabs = [["list", "🚚 Transporters"], ["dash", "📊 Dashboard"], ["expiring", `⚠ Expiring${expCount ? " (" + expCount + ")" : ""}`]];
   if (s.role === "admin") tabs.push(["team", "👥 Team"]);
   const active = ["detail", "profile"].includes(view) ? "list" : view;
   $("tabs").innerHTML = tabs.map(([k, l]) => `<button class="chip ${k === active ? "on" : ""}" onclick="setView('${k}')">${l}</button>`).join("");
-  ["vList", "vDetail", "vProfile", "vExpiring", "vTeam", "vImport"].forEach(id => $(id).classList.add("hidden"));
+  ["vList", "vDetail", "vProfile", "vExpiring", "vTeam", "vImport", "vDash"].forEach(id => $(id).classList.add("hidden"));
+  if (view === "dash") { $("vDash").classList.remove("hidden"); renderDash(); }
   if (view === "profile") { $("vProfile").classList.remove("hidden"); renderProfile(); }
   if (view === "import") $("vImport").classList.remove("hidden");
   if (view === "list") { $("vList").classList.remove("hidden"); renderList(); }
@@ -388,6 +423,7 @@ function render() {
   if (view === "expiring") { $("vExpiring").classList.remove("hidden"); renderExpiring(); }
   if (view === "team") { $("vTeam").classList.remove("hidden"); renderTeam(); }
   document.querySelectorAll(".edit-only").forEach(e => e.classList.toggle("hidden", !canEdit()));
+  document.querySelectorAll(".admin-only").forEach(e => e.classList.toggle("hidden", s.role !== "admin" || view !== "detail" || !curId));
 }
 
 function renderList() {
@@ -510,6 +546,104 @@ async function saveT() {
     const wasNew = !curId; curId = r.id; await load();
     if (!wasNew) setView("profile");   // edits go back to the profile; a new transporter stays here to add trucks and documents
   } catch { $("tErr").textContent = "No connection — nothing was saved."; }
+}
+
+async function removeT() {
+  const box = $("rmBox");
+  if (box.style.display === "none") { box.style.display = "block"; $("rmReason").focus(); return; }
+  const reason = $("rmReason").value.trim();
+  if (reason.length < 3) return toast("Type a reason for removing it first.");
+  if (!armOrConfirm($("rmT"), "Tap again to remove")) return;
+  try {
+    const r = await api("removeTransporter", { id: curId, reason });
+    if (!r.ok) return toast(r.error);
+    toast("Transporter removed."); box.style.display = "none"; $("rmReason").value = ""; curId = null; await load(); setView("list");
+  } catch { toast("No connection — nothing was removed."); }
+}
+
+/* ----- Dashboard ----- */
+function loadChartJS() {
+  if (window.Chart) return Promise.resolve();
+  return new Promise((ok, fail) => { const sc = document.createElement("script");
+    sc.src = "https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js";
+    sc.onload = () => { Chart.defaults.font.family = "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"; ok(); }; sc.onerror = fail; document.head.appendChild(sc); });
+}
+const cssv = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const charts = {};
+function hbar(id, labels, data, opts = {}) {
+  const canvas = $(id), wrap = canvas.parentElement;
+  wrap.querySelector(".empty")?.remove();
+  if (!labels.length) { charts[id]?.destroy(); delete charts[id]; canvas.classList.add("hidden");
+    return wrap.insertAdjacentHTML("beforeend", `<div class="empty">${opts.empty || "No data yet."}</div>`); }
+  canvas.classList.remove("hidden");
+  if (opts.horizontal !== false) wrap.style.height = Math.max(150, labels.length * 34 + 50) + "px";
+  const hz = opts.horizontal !== false, grid = { color: cssv("--grid") }, ticks = { color: cssv("--muted"), font: { size: 12 } };
+  const o = { responsive: true, maintainAspectRatio: false, animation: false, indexAxis: hz ? "y" : "x",   // no animation: draws in one go
+    plugins: { legend: { display: false }, tooltip: { backgroundColor: "#0b1218", borderColor: cssv("--line"), borderWidth: 1, padding: 10, displayColors: false,
+      callbacks: { label: c => `${c.formattedValue} ${opts.unit || ""}` } } },
+    scales: { x: { grid: hz ? grid : { display: false }, ticks: { ...ticks, precision: 0 }, border: { color: cssv("--line") }, beginAtZero: true },
+              y: { grid: hz ? { display: false } : grid, ticks: { ...ticks, precision: 0 }, border: { display: false }, beginAtZero: true } } };
+  const ds = { data, backgroundColor: opts.colors || cssv("--s1"), borderRadius: 4, borderSkipped: "start", maxBarThickness: 30 };
+  if (charts[id]) { charts[id].data.labels = labels; charts[id].data.datasets = [ds]; charts[id].options = o; return charts[id].update(); }
+  charts[id] = new Chart(canvas, { type: "bar", data: { labels, datasets: [ds] }, options: o });
+}
+const STATUS_COLOR = { Approved: "var(--go)", Pending: "#8cc4ff", Suspended: "var(--warn)", Blacklisted: "var(--stop)" };
+const countBy = (list, f) => list.reduce((g, x) => { [].concat(f(x)).filter(Boolean).forEach(k => g[k] = (g[k] || 0) + 1); return g; }, {});
+const sorted = g => Object.entries(g).sort((a, b) => b[1] - a[1]);
+
+async function renderDash() {
+  const T = D.transporters, K = D.trucks.filter(k => k.Active), docS = D.docs.map(d => ({ d, s: docState(d) }));
+  const by = countBy(T, t => t.Status), cap = K.reduce((s, k) => s + (Number(k["Capacity (t)"]) || 0), 0);
+  const tile = (n, v, note) => `<div class="card tile" style="margin:0"><small>${n}</small><b>${v}</b>${note ? `<small>${note}</small>` : ""}</div>`;
+  $("dTiles").innerHTML = tile("Transporters", T.length) + tile("Approved", by.Approved || 0) + tile("Pending approval", by.Pending || 0) +
+    tile("Suspended / blacklisted", (by.Suspended || 0) + (by.Blacklisted || 0)) + tile("Active trucks", K.length) +
+    tile("Fleet capacity", cap ? cap.toLocaleString() + " t" : "—") +
+    tile("Docs expiring ≤ 30 days", docS.filter(x => x.s.k === "soon").length) + tile("Expired docs", docS.filter(x => x.s.k === "exp").length);
+
+  // Status mix: one segmented bar with labelled legend
+  $("dStatusMix").innerHTML = T.length ? `<div class="seg">${STATUSES.filter(st => by[st]).map(st => `<div title="${st}: ${by[st]}" style="flex:${by[st]};background:${STATUS_COLOR[st]}"></div>`).join("")}</div>
+    <div class="legend">${STATUSES.map(st => `<span><i style="background:${STATUS_COLOR[st]}"></i>${st} <b>${by[st] || 0}</b></span>`).join("")}</div>` : `<p class="muted">No transporters yet.</p>`;
+
+  // Document compliance per type: valid / expiring / expired
+  const types = [...new Set(D.docs.map(d => d.Type))];
+  $("dCompliance").innerHTML = types.length ? types.map(ty => {
+    const l = docS.filter(x => x.d.Type === ty), c = k => l.filter(x => x.s.k === k).length;
+    return `<div class="meter"><span>${esc(ty)}</span>
+      <div class="seg">${[["ok", "var(--go)"], ["soon", "var(--warn)"], ["exp", "var(--stop)"]].filter(([k]) => c(k)).map(([k, col]) => `<div style="flex:${c(k)};background:${col}"></div>`).join("")}</div>
+      <span class="small" style="text-align:right"><span class="d-ok">${c("ok")}</span> · <span class="d-soon">${c("soon")}</span> · <span class="d-exp">${c("exp")}</span></span></div>`;
+  }).join("") + `<div class="legend" style="margin-top:8px"><span><i style="background:var(--go)"></i>Valid</span><span><i style="background:var(--warn)"></i>Expiring ≤ 30 days</span><span><i style="background:var(--stop)"></i>Expired</span></div>`
+    : `<p class="muted">No documents yet.</p>`;
+
+  // Needs attention
+  const att = T.filter(t => ["Approved", "Pending"].includes(t.Status)).map(t => {
+    const ds = docsOf(t.ID).map(docState), why = [];
+    const ex = ds.filter(x => x.k === "exp").length;
+    if (ex) why.push(`<span class="d-exp">${ex} expired document${ex > 1 ? "s" : ""}</span>`);
+    if (!ds.length) why.push(`<span class="d-soon">no documents</span>`);
+    if (!trucksOf(t.ID).some(k => k.Active)) why.push(`<span class="d-soon">no active trucks</span>`);
+    return { t, why, rank: ex ? 0 : 1 };
+  }).filter(x => x.why.length).sort((a, b) => a.rank - b.rank || String(a.t.Company).localeCompare(b.t.Company));
+  $("dAttention").innerHTML = att.length ? att.map(({ t, why }) => `<div class="item" onclick="openT('${t.ID}')">
+      <div><b>${esc(t.Company)}</b><br><small>${why.join(" · ")}</small></div><span class="pill s-${esc(t.Status)}" style="align-self:center">${esc(t.Status)}</span></div>`).join("")
+    : `<p class="muted">✓ Every approved and pending transporter has trucks and valid documents.</p>`;
+
+  try { await loadChartJS(); } catch { return toast("Charts need an internet connection."); }
+  const tt = sorted(countBy(K, k => k["Truck type"] || "Not set"));
+  hbar("cType", tt.map(x => x[0]), tt.map(x => x[1]), { unit: "trucks", empty: "No trucks yet." });
+  const capBy = T.map(t => [t.Company, trucksOf(t.ID).filter(k => k.Active).reduce((s, k) => s + (Number(k["Capacity (t)"]) || 0), 0)])
+    .filter(x => x[1] > 0).sort((a, b) => b[1] - a[1]).slice(0, 10);
+  hbar("cCap", capBy.map(x => x[0]), capBy.map(x => x[1]), { unit: "t", empty: "No capacity recorded yet." });
+  const cor = sorted(countBy(T.filter(t => t.Status === "Approved"), t => String(t.Corridors || "").split("; ").filter(Boolean)));
+  hbar("cCor", cor.map(x => x[0]), cor.map(x => x[1]), { unit: "transporters", empty: "No approved transporters with a corridor yet." });
+  const ctry = sorted(countBy(T, t => t.Country || "Not set"));
+  hbar("cCountry", ctry.map(x => x[0]), ctry.map(x => x[1]), { unit: "transporters", empty: "No transporters yet." });
+  // Expiries: overdue + next 6 months
+  const now = new Date(), months = Array.from({ length: 6 }, (_, i) => new Date(now.getFullYear(), now.getMonth() + i, 1));
+  const overdue = docS.filter(x => x.s.k === "exp").length;
+  const perMonth = months.map(m => D.docs.filter(d => { const e = new Date(d.Expiry); return e >= now && e.getFullYear() === m.getFullYear() && e.getMonth() === m.getMonth(); }).length);
+  const labels = ["Expired", ...months.map(m => m.toLocaleDateString([], { month: "short", year: "2-digit" }))];
+  hbar("cExp", D.docs.length ? labels : [], [overdue, ...perMonth], { horizontal: false, unit: "documents",
+    colors: [cssv("--stop"), ...months.map(() => cssv("--s1"))], empty: "No documents yet." });
 }
 
 /* ----- Trucks ----- */
@@ -767,7 +901,7 @@ function start() {
 }
 start();
 // Background refresh only on read-only screens, so nothing being typed gets wiped
-setInterval(() => { if (store.get(KEY) && !document.hidden && $("app").offsetParent && ["list", "expiring"].includes(view)) load(true); }, 120000);
+setInterval(() => { if (store.get(KEY) && !document.hidden && $("app").offsetParent && ["list", "expiring", "dash"].includes(view)) load(true); }, 120000);
 </script>
 </body>
 </html>
