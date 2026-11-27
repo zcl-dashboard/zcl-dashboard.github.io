@@ -42,7 +42,7 @@
   .pill { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--line); color: var(--muted); }
   .pill.sync { background: #3b2d0c; color: var(--brand); }
   .hidden { display: none !important; }
-  .tabs { position: sticky; top: 0; z-index: 5; display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px;
+  .tabs { position: sticky; top: 0; z-index: 5; display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 4px;
     background: var(--bg); padding: 6px 0 12px; }
   .tabs button { padding: 10px 2px; font-size: 12px; border-radius: 10px; border: 1px solid var(--line);
     background: var(--card); color: var(--muted); }
@@ -53,6 +53,11 @@
   .st.Cancelled { opacity: .5; }
   .plan { display: flex; justify-content: space-between; align-items: center; width: 100%; text-align: left;
     padding: 14px; margin-top: 8px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--text); font-size: 16px; }
+  .rec-ed { background: var(--bg); border-radius: 10px; padding: 12px; margin-top: 10px; }
+  .rec-ed label { margin-top: 8px; }
+  .rec-ed input, .rec-ed select { padding: 10px; font-size: 15px; }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .btn-danger { background: transparent; border: 1px solid var(--stop); color: var(--stop); }
   .role-h { margin: 14px 0 4px; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--brand); }
 </style>
 </head>
@@ -165,6 +170,7 @@
       <button data-tab="dash" onclick="setTab('dash')">📊 Stats</button>
       <button data-tab="ops" onclick="setTab('ops')">🏆 Ranking</button>
       <button data-tab="team" onclick="setTab('team')">👥 Team</button>
+      <button data-tab="records" onclick="setTab('records')" class="admin-only hidden">🛠 Records</button>
     </nav>
 
     <!-- ORDERS -->
@@ -207,7 +213,7 @@
     </div>
 
     <!-- Period picker: shared by Dashboard and Operators -->
-    <div class="card" data-tabs="dash ops">
+    <div class="card" data-tabs="dash ops records">
       <label style="margin-top:0">Period</label>
       <div class="chips" id="periodChips"></div>
       <label>Pick any date in the period</label>
@@ -249,6 +255,19 @@
     <div class="card" data-tabs="ops">
       <b>Operators</b> <small class="muted">· fastest avg per container first</small>
       <div id="opList"></div>
+    </div>
+
+    <!-- RECORDS (admin only): correct or remove recorded work -->
+    <div class="card" data-tabs="records">
+      <b>Correct records</b><br>
+      <small class="muted">Tap a work order to edit it or its containers. Every change needs a reason and is kept in the Audit tab of the Sheet. Removed records disappear from reports but are never erased.</small>
+      <div id="recList"></div>
+    </div>
+    <div class="card" data-tabs="records">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <b>Change history</b> <button class="chip" onclick="renderAudit()">↻ Load</button>
+      </div>
+      <div id="auditList"><p class="muted">Tap Load to see the latest 100 changes.</p></div>
     </div>
 
     <!-- TEAM -->
@@ -328,7 +347,9 @@ async function fillLoginNames() {
   } catch { if (!store.get("names", []).length) $("loginErr").textContent = "No connection — can't load names yet."; }
 }
 
-const ROLES = ["operator", "clerk", "supervisor"];
+const isBoss = r => r === "supervisor" || r === "admin";
+const isAdmin = () => store.get("session")?.role === "admin";
+const roleList = () => isAdmin() ? ["operator", "clerk", "supervisor", "admin"] : ["operator", "clerk", "supervisor"];
 let newRole = "operator", serverUsers = [];
 async function saveUser() {
   const name = $("uName").value.trim().replace(/\s+/g, " "), pin = $("uPin").value.trim();
@@ -348,7 +369,7 @@ async function saveUser() {
 function editUser(i) {
   const u = serverUsers[i];
   $("uName").value = u.name; $("uPin").value = ""; newRole = u.role;
-  chips($("roleChips"), ROLES, newRole, v => newRole = v);
+  chips($("roleChips"), roleList(), newRole, v => newRole = v);
   $("uPin").focus(); toast(`Set a new PIN and/or role for ${u.name}, then Save.`);
 }
 async function toggleUser(i) {
@@ -361,7 +382,7 @@ async function toggleUser(i) {
   } catch { toast("No connection — try again."); }
 }
 async function renderUsers() {
-  chips($("roleChips"), ROLES, newRole, v => newRole = v);
+  chips($("roleChips"), roleList(), newRole, v => newRole = v);
   try {
     const r = await api("listUsers");
     if (!r.ok) return $("userList").innerHTML = `<p class="muted">${r.error}</p>`;
@@ -376,7 +397,7 @@ async function renderUsers() {
         <button class="chip" onclick="toggleUser(${i})">${u.active ? "Deactivate" : "Activate"}</button>
       </div>
     </div>`; };
-  $("userList").innerHTML = ["supervisor", "clerk", "operator"].map(role => {
+  $("userList").innerHTML = ["admin", "supervisor", "clerk", "operator"].map(role => {
     const list = serverUsers.filter(u => u.role === role);
     return `<div class="role-h">${role}s · ${list.filter(u => u.active).length} active</div>` +
       (list.length ? list.map(row).join("") : `<p class="muted" style="margin:4px 0">None yet.</p>`);
@@ -418,7 +439,7 @@ async function login() {
 function logout() {
   if (store.get("active")) return toast("Finish the running work order first.");
   const s = store.get("session");
-  if (s.role !== "supervisor") {
+  if (!isBoss(s.role)) {
     const shifts = store.get("shifts", []);
     shifts.push({ id: "SH-" + Date.now().toString(36).toUpperCase(), operator: s.name,
       loginAt: s.loginAt, logoutAt: Date.now(), synced: false });
@@ -446,7 +467,7 @@ function stayIn() { clearInterval(autoOutTimer); autoOutTimer = null; $("autoOut
 // Checked every 30 s: an operator left signed in with nothing running gets signed out
 setInterval(() => {
   const s = store.get("session");
-  if (s && s.role !== "supervisor" && !store.get("active") && !autoOutTimer &&
+  if (s && !isBoss(s.role) && !store.get("active") && !autoOutTimer &&
       Date.now() - lastTap > IDLE_SIGN_OUT_MIN * 60000) {
     logout(); toast("Signed out after 5 minutes without activity.");
   }
@@ -490,7 +511,7 @@ async function sync() {
 // Tell the Sheet what this operator is doing right now (for the supervisor's "Working now")
 function pushLive() {
   const s = store.get("session");
-  if (s && s.role !== "supervisor") api("live", { active: store.get("active") }).catch(() => {});
+  if (s && !isBoss(s.role)) api("live", { active: store.get("active") }).catch(() => {});
 }
 
 // ---- Jobs ----
@@ -722,7 +743,7 @@ async function renderOrders() {
     if (u.ok) {
       serverUsers = u.users;
       const keep = $("oOperator").value;
-      const workers = u.users.filter(x => x.active && x.role !== "supervisor");
+      const workers = u.users.filter(x => x.active && !isBoss(x.role));
       $("oOperator").innerHTML = `<option value="">— pick an operator —</option>` +
         workers.map(x => `<option value="${esc(x.name)}">${esc(x.name)}${x.role === "clerk" ? " (clerk)" : ""}</option>`).join("");
       if (keep) $("oOperator").value = keep;
@@ -886,6 +907,108 @@ async function downloadReport() {
   finally { btn.textContent = label; }
 }
 
+// ---- Admin: correct or remove records ----
+const toInput = t => t ? new Date(t - new Date(t).getTimezoneOffset() * 60000).toISOString().slice(0, 19) : "";
+const opt = (list, cur) => list.map(v => `<option ${v === cur ? "selected" : ""}>${esc(v)}</option>`).join("");
+let recCustomers = [], recPeople = [];
+
+async function renderRecords(jobs) {
+  if (!recPeople.length) {   // names for the dropdowns, loaded once per visit
+    try {
+      const [c, u] = await Promise.all([api("customers"), api("listUsers")]);
+      if (c.ok) recCustomers = c.customers;
+      if (u.ok) recPeople = u.users.filter(x => !isBoss(x.role)).map(x => x.name);
+    } catch {}
+  }
+  const open = new Set([...document.querySelectorAll("#recList details[open]")].map(d => d.dataset.wo));
+  const DELAYS = ["", "Equipment breakdown", "Waiting for truck", "Documentation", "Weather", "Other"];
+  $("recList").innerHTML = jobs.length ? jobs.slice().sort((a, b) => b.start - a.start).map(j => `
+    <details class="job" style="display:block" data-wo="${esc(j.id)}" ${open.has(j.id) ? "open" : ""}>
+      <summary style="display:flex;justify-content:space-between;gap:8px;cursor:pointer;list-style:none">
+        <div><b>${esc(j.operator)}</b> · ${esc(j.customer || j.task)}<br>
+          <small class="muted">${new Date(j.start).toLocaleDateString("en-GB")} ${clock(j.start)} · ${(j.containers || []).length} containers · ${esc(j.id)}</small></div>
+        <span class="muted">✏</span>
+      </summary>
+      <div class="rec-ed">
+        <label style="margin-top:0">Reason for change (required)</label>
+        <input id="rs-${j.id}" placeholder="e.g. Operator forgot to stop the timer">
+        <div class="row2">
+          <div><label>Operator</label><select id="wo-op-${j.id}">${opt([...new Set([j.operator, ...recPeople])], j.operator)}</select></div>
+          <div><label>Customer</label><select id="wo-cu-${j.id}">${opt([...new Set([j.customer || "", ...recCustomers])], j.customer || "")}</select></div>
+          <div><label>Equipment</label><select id="wo-eq-${j.id}">${opt([...new Set([j.equipment, ...EQUIPMENT])], j.equipment)}</select></div>
+          <div><label>Delay</label><select id="wo-de-${j.id}">${opt([...new Set([j.delay || "", ...DELAYS])], j.delay || "")}</select></div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:10px">
+          <button class="chip" onclick="saveWO('${j.id}')">Save work order</button>
+          <button class="chip btn-danger" id="rm-${j.id}" onclick="removeWO('${j.id}')">Remove work order</button>
+        </div>
+      </div>
+      ${(j.containers || []).map((c, i) => `<div class="rec-ed">
+        <div class="row2">
+          <div><label style="margin-top:0">Container</label><input id="c-no-${j.id}-${i}" value="${esc(c.no)}"></div>
+          <div><label style="margin-top:0">Size</label><select id="c-sz-${j.id}-${i}">${opt([...new Set([c.size, ...SIZES])], c.size)}</select></div>
+          <div><label>Task</label><select id="c-tk-${j.id}-${i}">${opt([...new Set([c.task || j.task, ...TASKS])], c.task || j.task)}</select></div>
+          <div><label>Time taken</label><input disabled value="${fmt(c.end - c.start)}"></div>
+          <div><label>Started</label><input type="datetime-local" step="1" id="c-st-${j.id}-${i}" value="${toInput(c.start)}"></div>
+          <div><label>Finished</label><input type="datetime-local" step="1" id="c-en-${j.id}-${i}" value="${toInput(c.end)}"></div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:10px">
+          <button class="chip" onclick="saveCtr('${j.id}',${i})">Save container</button>
+          <button class="chip btn-danger" id="rmc-${j.id}-${i}" onclick="removeCtr('${j.id}',${i})">Remove container</button>
+        </div>
+      </div>`).join("")}
+    </details>`).join("") : `<p class="muted">No work orders in this period.</p>`;
+}
+
+const jobById = id => (report?.jobs || []).find(j => j.id === id);
+function reasonFor(id) {
+  const r = $("rs-" + id).value.trim();
+  if (r.length < 3) { $("rs-" + id).focus(); toast("Type a reason for the change first (top of this work order)."); return null; }
+  return r;
+}
+async function sendEdit(payload, okMsg) {
+  try {
+    const r = await api("adminEdit", payload);
+    if (!r.ok) return toast(r.error);
+    toast(okMsg); refreshSuper();
+  } catch { toast("No connection — nothing was changed."); }
+}
+function saveWO(id) {
+  const reason = reasonFor(id); if (!reason) return;
+  sendEdit({ kind: "wo", wo: id, reason, changes: { operator: $("wo-op-" + id).value, customer: $("wo-cu-" + id).value,
+    equipment: $("wo-eq-" + id).value, delay: $("wo-de-" + id).value } }, "Work order corrected.");
+}
+function removeWO(id) {
+  const reason = reasonFor(id); if (!reason) return;
+  if (!armOrConfirm($("rm-" + id), "Tap again to remove")) return;
+  sendEdit({ kind: "wo", wo: id, reason, remove: true }, "Work order removed from reports.");
+}
+function saveCtr(id, i) {
+  const reason = reasonFor(id); if (!reason) return;
+  const c = jobById(id).containers[i], k = `${id}-${i}`;
+  const start = new Date($("c-st-" + k).value).getTime(), end = new Date($("c-en-" + k).value).getTime();
+  if (!(end > start)) return toast("Finish time must be after start time.");
+  sendEdit({ kind: "container", wo: id, no: c.no, reason, changes: { no: $("c-no-" + k).value.trim().toUpperCase(),
+    size: $("c-sz-" + k).value, task: $("c-tk-" + k).value, start, end } }, "Container corrected.");
+}
+function removeCtr(id, i) {
+  const reason = reasonFor(id); if (!reason) return;
+  if (!armOrConfirm($(`rmc-${id}-${i}`), "Tap again to remove")) return;
+  sendEdit({ kind: "container", wo: id, no: jobById(id).containers[i].no, reason, remove: true }, "Container removed from reports.");
+}
+async function renderAudit() {
+  $("auditList").innerHTML = `<p class="muted">Loading…</p>`;
+  try {
+    const r = await api("auditLog");
+    if (!r.ok) return $("auditList").innerHTML = `<p class="muted">${esc(r.error)}</p>`;
+    $("auditList").innerHTML = r.rows.length ? r.rows.map(a => `<div class="job" style="display:block;font-size:14px">
+      <b>${esc(a[2])}</b> · ${esc(a[3])} ${a[4] ? "· " + esc(a[4]) : ""}<br>
+      ${a[5] || a[6] ? `<span class="muted">${esc(a[5]) || "—"} → ${esc(a[6]) || "—"}</span><br>` : ""}
+      <small class="muted">${new Date(a[0]).toLocaleString("en-GB")} · ${esc(a[1])} · “${esc(a[7])}”</small></div>`).join("")
+      : `<p class="muted">No changes yet.</p>`;
+  } catch { $("auditList").innerHTML = `<p class="muted">No connection.</p>`; }
+}
+
 // ---- Supervisor tabs ----
 let supTab = store.get("supTab", "orders");
 function setTab(t) {
@@ -893,6 +1016,7 @@ function setTab(t) {
   document.querySelectorAll("#supTabs button").forEach(b => b.classList.toggle("on", b.dataset.tab === t));
   document.querySelectorAll("#super [data-tabs]").forEach(el =>
     el.classList.toggle("hidden", !el.dataset.tabs.split(" ").includes(t)));
+  if (t === "records") recPeople = [];   // reload names when opening Records
   if (t === "team") renderUsers();
   else if (t === "orders") renderOrders();
   else refreshSuper();  // fresh data each time a tab opens; also decides the trend card
@@ -1024,6 +1148,7 @@ function renderSuper() {
       </div>`).join("")}
     </details>`).join("")
     : `<p class="muted">No activity in this period.</p>`;
+  if (supTab === "records") renderRecords(jobs);
 }
 
 function route() {
@@ -1031,7 +1156,12 @@ function route() {
   const s = store.get("session"), a = store.get("active");
   $("who").textContent = s ? s.name : "";
   if (!s) { fillLoginNames(); return show("login"); }
-  if (s.role === "supervisor") { show("super"); return setTab(supTab); }
+  if (isBoss(s.role)) {
+    show("super");
+    document.querySelectorAll(".admin-only").forEach(b => b.classList.toggle("hidden", s.role !== "admin"));
+    if (supTab === "records" && s.role !== "admin") supTab = "orders";
+    return setTab(supTab);
+  }
   if (a) { show("running"); return renderRunning(a); }
   show("newJob"); renderNewJob();
 }
