@@ -397,7 +397,14 @@ async function fillLoginNames() {
   paint(store.get("names", []));                       // last known list first, so it works offline
   try {
     const r = await (await fetch(API + "?action=names")).json();
-    if (r.ok) { store.set("names", r.names); paint(r.names); }
+    if (r.ok) {
+      store.set("names", r.names); paint(r.names);
+      // Forget offline sign-ins and saved orders for accounts that no longer exist (e.g. after the go-live reset)
+      const known = store.get("known", {});
+      Object.keys(known).forEach(n => { if (!r.names.includes(n)) delete known[n]; });
+      store.set("known", known);
+      if (!store.get("jobs", []).some(j => !j.synced)) { store.set("jobs", []); store.set("myOrders", []); }
+    }
   } catch { if (!store.get("names", []).length) $("loginErr").textContent = "No connection — can't load names yet."; }
 }
 
